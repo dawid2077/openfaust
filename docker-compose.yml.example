@@ -1,7 +1,7 @@
 services:
-  faustai:
-    image: ghcr.io/dawid2077/discord_bot:v1
-    container_name: FaustAi
+  openfaust:
+    image: ghcr.io/dawid2077/OpenFaust:v1
+    container_name: openfaust
     restart: unless-stopped
     environment:
       - DISCORD_TOKEN=your_discord_token_here

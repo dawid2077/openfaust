@@ -1,7 +1,7 @@
 services:
-  faustai:
+  openfaust:
     build: .
-    container_name: FaustAi
+    container_name: openfaust
     restart: unless-stopped
     environment:
       - DISCORD_TOKEN=your_discord_token_here
