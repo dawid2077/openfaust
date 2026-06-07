@@ -1,0 +1,10 @@
+__pycache__/
+deprecated/
+SQlite.sql
+.env
+data_play.db
+shell.nix
+design.txt
+.git
+.gitignore
+'-- SQlite.sql'

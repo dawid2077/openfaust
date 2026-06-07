@@ -1,0 +1,12 @@
+services:
+  faustai:
+    build: .
+    container_name: FaustAi
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=your_discord_token_here
+      - OPENROUTER_API_KEY=your_openrouter_token_here (it uses mistral small 4 )
+      - APP_DATA_PATH=/app/data
+      - APP_PERSONALITY_PATH=/app/data/personality.md
+    volumes:
+      - ./data:/app/data
