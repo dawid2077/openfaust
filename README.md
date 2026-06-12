@@ -18,7 +18,7 @@ Developed on **NixOS**, written in **Python**, and deployed seamlessly via **Doc
 
 The ecosystem is built out of isolated modules separating core Discord events, LLM orchestration, and background processes:
 
-<img src="image_9593f6.jpg" alt="OpenFaust Architecture Diagram" width="750">
+<img src="assets/Faust.drawio.png" alt="OpenFaust Architecture Diagram" width="750">
 
 ---
 
