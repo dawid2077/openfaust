@@ -4,9 +4,6 @@ services:
     container_name: openfaust
     restart: unless-stopped
     environment:
-      - DISCORD_TOKEN=your_discord_token_here
-      - OPENROUTER_API_KEY=your_openrouter_mistral_token_here
-      - APP_DATA_PATH=/app/data
-      - APP_PERSONALITY_PATH=/app/data/personality.md
+      .env
     volumes:
       - ./data:/app/data
