@@ -13,7 +13,7 @@ Rozwijany na **NixOS**, napisany w **Pythonie** i bezproblemowo wdrażany za pom
 
 Ekosystem składa się z odizolowanych modułów oddzielających główne zdarzenia Discorda, orkiestrację LLM oraz procesy działające w tle:
 
-<img src="image_9593f6.jpg" alt="OpenFaust Architecture Diagram" width="750">
+<img src="assets/Faust.drawio.png" alt="OpenFaust Architecture Diagram" width="750">
 
 ---
 
