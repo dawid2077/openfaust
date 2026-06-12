@@ -2,6 +2,9 @@
 <<<<<<< HEAD
 =======
 
+ English | [Po Polsku 🇵🇱](README_PL.md)
+
+---
 An asynchronous, event-driven, multi-processed AI companion framework built for Discord. OpenFaust doesn't just passively reply to messages—it actively monitors conversation momentum, autonomously decides when to engage, and wakes itself up to break long silences using a custom routing engine.
 
 Developed on **NixOS**, written in **Python**, and deployed seamlessly via **Docker**.
@@ -14,16 +17,13 @@ The ecosystem is built out of isolated modules separating core Discord events, L
 
 <img src="image_9593f6.jpg" alt="OpenFaust Architecture Diagram" width="750">
 
-*The detailed interaction routing diagram mapping context.py, kairos.py, and the background execution loops as visualized in image_9593f6.jpg.*
-
 ---
 
 ## ✨ Key Features
-
+*   **🎭 Dynamic Persona Engine:** Fully personality-agnostic. Drop any markdown profile into the data directory, and the framework automatically re-extracts the identity and re-aligns the routing logic.
 *   **🧠 Kairos Semantic Router:** Uses a fast, deterministic model (`gpt-4o-mini`) as a traffic cop to evaluate whether a user's message warrants a response based on timing, direct tags, or conversational continuity before passing it to a heavier model.
 *   **💓 Decoupled Heartbeat Loop:** A background `multiprocessing.Process` completely separate from the Discord thread that evaluates chat silences every 30 minutes and can autonomously trigger interactions.
 *   **📂 Persistent Local Memory:** Powered by an optimized SQLite database factory tracking clean, structured user histories and metadata context.
-*   **🎭 Dynamic Persona Engine:** Fully personality-agnostic. Drop any markdown profile into the data directory, and the framework automatically re-extracts the identity and re-aligns the routing logic.
 
 ---
 
@@ -82,23 +82,24 @@ To swap your bot's behavior profile dynamically:
 ## 🛠️ My Design Choices 
 
 ### 🐍 Python
-> I decided to use python because i have most expierience in it and like to use it , it has a good discord andapi for models library.
+> I decided to use Python because I have the most experience with it and enjoy using it. It also features excellent libraries for both Discord and model APIs.
 
 ### 🧠 The Kairos Router & Heartbeat
-> I added kairos to make openfaust feel more human have it interact with the user on its own. and to save costs
+> I added Kairos to make OpenFaust feel more human by allowing it to interact with users autonomously, while also keeping API costs down.
 
 ### 🗄️ SQLite & Context
-> I choosed sqlite because its just a one file it handles well json and i needed a database for persistent storage and context because docker on its own is stateless
+> I chose SQLite because it operates from a single file and handles JSON well. I needed a database for persistent storage and context management since Docker containers are stateless by default.
 
 ### 🐋 Multi-Process Containerization (Docker)
-> I decided to go with docker because i care about plug and play component of it and also it provides security, isolation, and seamless management
-### 🌐 Hosting & Deployment (OCI & NixOS)
+> I decided to go with Docker because I value its plug-and-play capability, and it provides robust security, isolation, and seamless management.
 
-> I developed it on nixos and on my server it runs on nixos because i love nixos and i think its underrated for development and especially as a server distro .I  personally host it on oci because it has a very generous free tier and i have already knew it because i have a certificate
+### 🌐 Hosting & Deployment (OCI & NixOS)
+> I developed this project on NixOS, and my server runs on NixOS because I love the operating system and believe it is highly underrated for development and especially as a server distribution. I personally host it on OCI (Oracle Cloud Infrastructure) because it offers a very generous free tier, and I was already familiar with the platform through my certification.
 
 ---
 >>>>>>> 256acb3 (docker config in .env and working on README.MD)
 
+<<<<<<< HEAD
  English | [Po Polsku 🇵🇱](README_PL.md)
 
 ---
@@ -209,3 +210,9 @@ To swap your bot's behavior profile dynamically:
 *   **Copyright (c) 2026 dawid2077** 
 =======
 >>>>>>> 256acb3 (docker config in .env and working on README.MD)
+=======
+## LICENSE
+
+*   **This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.** 
+*   **Copyright (c) 2026 dawid2077** 
+>>>>>>> 082c2f3 (README.md is in a good state also added README_PL.md)
