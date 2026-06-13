@@ -11,7 +11,6 @@ from context import context_kairos
 
 
 load_dotenv()
-load_dotenv(dotenv_path="config.txt")
 RESET_ANCHOR = datetime.now(timezone.utc)
 data_path = os.getenv("APP_DATA_PATH", "./data/")
 db_path = os.path.join(data_path, "data.db")
@@ -31,7 +30,7 @@ def restart_limit():
     global RESET_ANCHOR
     now = datetime.now(timezone.utc)
     
-    days_after_limit_resets=os.getenv("DAYS_AFTER_LIMIT_RESETS")
+    days_after_limit_resets=os.getenv("DAYS_AFTER_LIMIT_RESETS","./data/config.txt")
     days_after_limit_resets=int(days_after_limit_resets)
     if now - RESET_ANCHOR >= timedelta(days_after_limit_resets):
         RESET_ANCHOR = now  
@@ -39,7 +38,7 @@ def restart_limit():
         daily_limit=0
 
 def check_limits(daily_limit):
-    daily_limit_max=os.getenv("DAILY_LIMIT_MAX")
+    daily_limit_max=os.getenv("DAILY_LIMIT_MAX","./data/config.txt")
 
 
 
@@ -53,7 +52,8 @@ def heartbeat(task_queue):
     #Runs in background every 30 minutes
     daily_limit=0
     while True:
-        time.sleep(60*30)
+        heartbeat_time=os.getenv("HEARTBEAT_TIME_SECONDS","./data/config.txt")
+        time.sleep(heartbeat_time)
         print("[Background] Running heartbeat...")
 
 

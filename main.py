@@ -22,7 +22,8 @@ load_dotenv()
 
 active_channel_id=0
 user_message_log = {}
-DAILY_LIMIT= 40
+DAILY_LIMIT=os.getenv("MESSAGES_BY_USER_LIMIT","./data/config.txt")
+
 
 
 personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
