@@ -9,6 +9,8 @@ Rozwijany na **NixOS**, napisany w **Pythonie** i bezproblemowo wdrażany za pom
 
 ---
 
+<img src="assets/mephi_small.png" alt="Projects mascot named mephi" width="350">
+
 ## 🗺️ Architektura Systemu
 
 Ekosystem składa się z odizolowanych modułów oddzielających główne zdarzenia Discorda, orkiestrację LLM oraz procesy działające w tle:

@@ -43,7 +43,7 @@ def init_db():
 
     # Check if the file exists
     if file_path.exists():
-        print("File  exists!")
+        print("Personality file  exists!")
     else:
         # Create the file
         file_path.touch()
@@ -58,7 +58,28 @@ def init_db():
         with open(file_path,"w",encoding="utf-8") as f:
             f.write(persona)
 
-        print("File created successfully.")
+        print("Config f ile created successfully.")
+
+
+    file_config=Path(os.getenv("APP_CONFIG_PATH", "./data/config.txt"))
+    if file_config.exists():
+        print("Config file  exists!")
+    else:
+        # Create the file
+        file_config.touch()
+        config = (
+            "DAILY_LIMIT_MAX=2\n"
+            "DAYS_AFTER_LIMIT_RESETS=1\n"
+            "MESSAGES_BY_USER_LIMIT=40\n"
+            "HEARTBEAT_TIME_SECONDS=1800\n"
+        )
+        with open(file_config,"w",encoding="utf-8") as f:
+            f.write(config)
+
+        print("Config file created successfully.")
+
+
+
 
 if __name__=="__main__":
     init_db()

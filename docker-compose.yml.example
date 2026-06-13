@@ -1,9 +1,9 @@
 services:
   openfaust:
-    image: ghcr.io/dawid2077/OpenFaust:v1
+    image: ghcr.io/dawid2077/openfaust:v2-unstable
     container_name: openfaust
     restart: unless-stopped
-    environment:
-      .env
+    env_file:
+      - .env
     volumes:
       - ./data:/app/data

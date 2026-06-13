@@ -4,6 +4,6 @@ services:
     container_name: openfaust
     restart: unless-stopped
     environment:
-      .env
+      - .env
     volumes:
       - ./data:/app/data
