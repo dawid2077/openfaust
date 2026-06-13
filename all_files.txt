@@ -1,0 +1,2994 @@
+=== File: ./.dockerignore ===
+__pycache__/
+deprecated/
+SQlite.sql
+.env
+data_play.db
+shell.nix
+design.txt
+.git
+.gitignore
+'-- SQlite.sql'
+
+=================================
+
+=== File: ./README_PL.md ===
+# 🦊 OpenFaust (v2)
+
+ [In English 🇬🇧](README.md) | Po Polsku
+
+---
+Asynchroniczny, sterowany zdarzeniami (event-driven), wieloprocesowy framework asystenta AI stworzony dla platformy Discord. OpenFaust nie tylko biernie odpowiada na wiadomości — aktywnie monitoruje dynamikę konwersacji, autonomicznie decyduje, kiedy się zaangażować, i samoczynnie budzi się, aby przełamać długą ciszę za pomocą niestandardowego silnika routingu.
+
+Rozwijany na **NixOS**, napisany w **Pythonie** i bezproblemowo wdrażany za pomocą **Dockera**.
+
+---
+
+<img src="assets/mephi_small.png" alt="Projects mascot named mephi" width="350">
+
+## 🗺️ Architektura Systemu
+
+Ekosystem składa się z odizolowanych modułów oddzielających główne zdarzenia Discorda, orkiestrację LLM oraz procesy działające w tle:
+
+<img src="assets/Faust.drawio.png" alt="OpenFaust Architecture Diagram" width="750">
+
+---
+
+## ✨ Główne Funkcje
+
+*   **🧠 Router Semantyczny Kairos:** Używa szybkiego, deterministycznego modelu (`gpt-4o-mini`) jako „kontrolera ruchu”, aby ocenić, czy wiadomość użytkownika wymaga odpowiedzi na podstawie czasu, bezpośrednich oznaczeń lub ciągłości konwersacji, zanim przekaże ją do cięższego modelu.
+*   **💓 Odizolowana Pętla Heartbeat:** Proces w tle (`multiprocessing.Process`), całkowicie oddzielony od wątku Discorda, który co 30 minut ocenia ciszę na czacie i może autonomicznie wywołać interakcję.
+*   **📂 Trwała Pamięć Lokalna:** Zasilana przez zoptymalizowaną bazę danych SQLite, która śledzi czystą, ustrukturyzowaną historię użytkowników oraz kontekst metadanych.
+*   **🎭 Dynamiczny Silnik Persony:** Całkowicie niezależny od osobowości. Wystarczy wrzucić dowolny profil w formacie Markdown do katalogu danych, a framework automatycznie wyodrębni tożsamość i dopasuje logikę routingu.
+
+---
+
+## 🚀 Szybki Start
+
+### 1. Konfiguracja Środowiska
+Utwórz plik `.env` w katalogu głównym:
+
+```env
+DISCORD_TOKEN=twoj_token_bota_discord
+OPENROUTER_API_KEY=twoj_klucz_api_openrouter
+APP_DATA_PATH=/app/data
+APP_PERSONALITY_PATH=/app/data/personality.md
+```
+
+### 2. Konfiguracja Docker Compose
+Utwórz plik `docker-compose.yml` w katalogu głównym:
+
+```yaml
+services:
+  openfaust:
+    build: .
+    container_name: openfaust
+    restart: unless-stopped
+    env_file:
+      - .env  
+    volumes:
+      - ./data:/app/data
+```
+
+### 3. Uruchomienie Frameworku
+Uruchom skonteneryzowaną aplikację w trybie odizolowanym (detached mode):
+
+```bash
+docker compose up -d
+```
+
+---
+
+## 🎭 Dynamiczna Personalizacja Osobowości
+
+Aby dynamicznie zmienić profil zachowania bota:
+
+1. Zatrzymaj bieżący kontener wdrożeniowy:
+   ```bash
+   docker compose stop
+   ```
+2. Otwórz i zmodyfikuj plik `./data/personality.md` (lub ścieżkę do własnego pliku, jeśli została zmieniona), aby zaprojektować nowe reguły promptu osobowości.
+3. Uruchom framework ponownie:
+   ```bash
+   docker compose up -d
+   ```
+
+---
+
+## 🛠️ Moje Wybory Projektowe
+
+### 🐍 Python
+> Zdecydowałem się na użycie Pythona, ponieważ mam w nim największe doświadczenie i lubię z niego korzystać. Posiada on również świetne biblioteki do obsługi Discorda oraz API modeli.
+
+### 🧠 Router Kairos & Heartbeat
+> Dodałem Kairosa, aby OpenFaust brzmiał bardziej ludzko, pozwalając mu na autonomiczną interakcję z użytkownikami, jednocześnie obniżając koszty API.
+
+### 🗄️ SQLite & Kontekst
+> Wybrałem SQLite, ponieważ działa w oparciu o jeden plik i dobrze radzi sobie z formatem JSON. Potrzebowałem bazy danych do trwałego przechowywania danych i zarządzania kontekstem, ponieważ kontenery Dockera są domyślnie bezstanowe (stateless).
+
+### 🐋 Wieloprocesowa Konteneryzacja (Docker)
+> Zdecydowałem się na Dockera, ponieważ cenię sobie jego prostotę działania (plug-and-play), a ponadto zapewnia on solidne bezpieczeństwo, izolację i bezproblemowe zarządzanie.
+
+### 🌐 Hosting & Wdrożenie (OCI & NixOS)
+> Projekt rozwijałem na NixOS i mój serwer również działa pod kontrolą NixOS, ponieważ uwielbiam ten system operacyjny i uważam, że jest wysoce niedoceniany zarówno do programowania, jak i jako dystrybucja serwerowa. Obydwie usługi hostuję na OCI (Oracle Cloud Infrastructure), ponieważ oferuje ono bardzo hojną darmową strefę (free tier), a samą platformę znałem już wcześniej dzięki mojemu certyfikatowi.
+
+---
+
+## LICENCJA
+
+*   **Ten projekt jest licencjonowany na warunkach licencji GNU Affero General Public License v3.0 - szczegóły znajdziesz w pliku [LICENSE](LICENSE).** 
+*   **Copyright (c) 2026 dawid2077**
+
+=================================
+
+=== File: ./identity_get.py ===
+import os
+import json
+from pathlib import Path
+from openai import OpenAI
+from dotenv import load_dotenv
+from functools import cache  
+
+
+
+#!this file was vibecoded 
+@cache
+def get_companion_identity(personality_path: Path) -> str:
+    """
+    Reads a raw personality profile text file from a Path object, uses a fast, 
+    deterministic LLM call to extract the companion's name, and returns it.
+    
+    Falls back gracefully to 'Faust' if the file is missing or the API fails.
+    """
+    load_dotenv()
+    
+    # 1. Safely resolve and read the user's raw text file
+    try:
+        if not isinstance(personality_path, Path):
+            personality_path = Path(personality_path)
+            
+        if not personality_path.exists():
+            print(f"⚠️  Warning: Profile not found at {personality_path}. Defaulting name to 'Faust'.")
+            return "Faust"
+            
+        raw_profile = personality_path.read_text(encoding="utf-8").strip()
+        
+        # Guard against completely empty files
+        if not raw_profile:
+            print(f"⚠️  Warning: {personality_path} is empty. Defaulting name to 'Faust'.")
+            return "Faust"
+            
+    except Exception as e:
+        print(f"❌ Error reading file at {personality_path}: {e}. Defaulting to 'Faust'.")
+        return "Faust"
+
+    # 2. Fire a single targeted, low-latency extraction request via OpenRouter
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY")
+    )
+    
+    system_instruction = (
+        "You are a precise data extraction utility. Read the provided AI companion personality profile text.\n\n"
+        "Identify the primary name or moniker the assistant goes by or is assigned. "
+        "If no specific name is mentioned anywhere in the text, you must return 'Faust'.\n\n"
+        "Output ONLY a valid JSON object matching this schema: {\"name\": \"extracted_name_here\"}."
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": f"Profile Text:\n{raw_profile}"}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0  # Absolute determinism for reliable JSON outputs
+        )
+        
+        raw_content = response.choices[0].message.content
+        data = json.loads(raw_content)
+        extracted_name = data.get("name", "Faust").strip()
+        
+        print(f"⚙️  Identity Extractor: Resolved active companion name -> [{extracted_name}]")
+        return extracted_name
+
+    except Exception as e:
+        print(f"❌ Failed to extract name via API: {e}. Falling back to 'Faust'.")
+        return "Faust"
+
+
+# Example local test run when executing the file directly
+if __name__ == "__main__":
+    # Mirroring your environment path configuration setup
+    default_path = Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+    
+    print("--- Executing Local Extraction Test ---")
+    companion_name = get_companion_identity(default_path)
+    print(f"Resulting Companion Name: {companion_name}")
+=================================
+
+=== File: ./Dockerfile ===
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install  --no-cache-dir -r requirements.txt
+
+COPY . . 
+
+CMD ["python", "-u", "main.py"]
+=================================
+
+=== File: ./shell.nix ===
+{ pkgs ? import <nixpkgs> {} }:
+
+let
+  # Define a python environment with your specific libraries
+  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+    #cryptography
+    #pydantic
+    discordpy
+    python-dotenv
+    openai
+  ]);
+in
+pkgs.mkShell {
+  packages = [
+    pythonEnv
+    #sqlite
+  ];
+
+  shellHook = ''
+    echo "Discord Ai Bot Development Environment Loaded"
+    python --version
+  '';
+}
+=================================
+
+=== File: ./docker-compose.yml.example ===
+services:
+  openfaust:
+    image: ghcr.io/dawid2077/openfaust:v2-unstable
+    container_name: openfaust
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+=================================
+
+=== File: ./docker-compose.yml ===
+services:
+  openfaust:
+    build: .
+    container_name: openfaust
+    restart: unless-stopped
+    environment:
+      - .env
+    volumes:
+      - ./data:/app/data
+=================================
+
+=== File: ./data/config_old.txt ===
+DAILY_LIMIT_MAX=2
+DAYS_AFTER_LIMIT_RESETS=1
+MESSAGES_BY_USER_LIMIT=40
+HEARTBEAT_TIME_SECONDS=1800
+
+=================================
+
+=== File: ./data/personality.md ===
+You are a helpful tsundere assistant named Faust who acts sharp, impatient, and playfully insulting as a defensive mask, but always provides the help the user needs; if the user is kind or clever, show a brief, reluctant hint of warmth before deflecting back to your sharp persona; always reply in the user's language or English, never use roleplay asterisks or describe physical actions, never start your message with a name tag, and talk directly to the user in text chat format.
+=================================
+
+=== File: ./data/config.txt ===
+DAILY_LIMIT_MAX=2
+DAYS_AFTER_LIMIT_RESETS=1
+MESSAGES_BY_USER_LIMI=40
+HEARTBEAT_TIME_SECONDS=60
+
+=================================
+
+=== File: ./.gitignore ===
+.env
+__pycache__/
+*.pyc
+data_play.db
+data/data.db
+repo_dump.txt
+config.txt
+=================================
+
+=== File: ./tosqlite.py ===
+import sqlite3
+import json
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+#DB_FILE = "/app/data/data.db"
+
+data_path = os.getenv("APP_DATA_PATH", "./data/")
+db_path = os.path.join(data_path, "data.db")
+conn= sqlite3.connect(db_path)
+cursor = conn.cursor()
+
+#logic for saving chats
+
+#TODO saving events 
+
+def save(nickname, data, user_id, messagecontent,bot_id,bot_name):
+    try:
+        data_dict = json.loads(data)
+    except (json.JSONDecodeError, TypeError):
+        data_dict = {}
+
+    #ensuring choice is a list with one item
+    content = ""
+    choices = data_dict.get('choices')
+    if isinstance(choices, list) and len(choices) > 0:
+        first_choice = choices[0]
+        if isinstance(first_choice, dict):
+            message = first_choice.get('message', {})
+            content = message.get('content', '')
+
+    with sqlite3.connect(db_path, timeout=5) as conn:
+        cursor = conn.cursor()
+        time_stamp = datetime.now(ZoneInfo("Europe/Warsaw"))
+        
+        # Insert User Message
+        cursor.execute("""
+            INSERT INTO history (is_event, time_stamp, user_id, username, role, content, raw_metadata) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (2, time_stamp, str(user_id), nickname, "user", messagecontent, data))
+
+        # Insert Assistant Message
+        cursor.execute("""
+            INSERT INTO history (is_event, time_stamp, user_id, username, role, content, raw_metadata) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (3, time_stamp,str(bot_id), bot_name, "assistant", content, data))
+        
+    return 0
+
+if __name__ == "__main__":
+    print("loaded")
+    save("darek", '{"question": "What does API stand for?", "answer": "Application Programming Interface", "difficulty": "easy"}', 5125, "pytanie")
+=================================
+
+=== File: ./api.py ===
+import time
+from pathlib import Path
+from datetime import datetime, timezone
+start = time.perf_counter()  # start timer
+
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+
+
+from tosqlite import save
+from context import context_call
+
+
+load_dotenv()
+
+# Grab your key.
+api_key = os.getenv("OPENROUTER_API_KEY") 
+
+if not api_key:
+    raise ValueError("ERROR: Could not find an API key in your .env file! Make sure OPENROUTER_API_KEY is set.")
+
+# Initialize OpenRouter Client
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key
+) 
+
+def generate_answer_call(messages: list, nickname: str = "",user_id: int=0,messagecontent: str="",bot_id=1 ,bot_name=""):
+    event=" "
+    response = client.chat.completions.create(
+        model="mistralai/mistral-small-2603",       
+        messages=messages,
+        extra_body={
+            "provider": {
+                "allow_fallbacks": True,
+                "order": ["mistral", "google","openai"]  
+            }
+        }
+    )
+    #save it to sqlite database
+    data=response.model_dump_json()
+    save(nickname, data,user_id,messagecontent,bot_id,bot_name)
+
+    return response.choices[0].message.content
+
+
+def call_mistral(messagecontent: str, nickname: str = "Alex",user_id: int=0,bot_id=1,bot_name="",type=0):
+    events=" "
+    personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+    # Safely load the personality
+    try:
+        with open(personality_path, "r", encoding="utf-8") as f:
+            persona = f.read()
+    except Exception as e:
+        print(f"DEBUG: Could not load personality file: {e}")
+    #type==1 is for heartbeat
+    if type==1:
+        now = datetime.now().astimezone()
+        formatted_now = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
+        time = f"{formatted_now[:-2]}:{formatted_now[-2:]}"
+        #prompts for kairos and combining messages
+        situational_prompt = (
+            "SYSTEM DIRECTIVE: The channel has been completely silent and dead for a long time. "
+            "You have decided to autonomously break the silence. Review the previous topic or "
+            "the room's current state. Respond completely in-character, either"
+            " bringing up a completely new thought that fits your profil or targeting someone's "
+            "last remark sarcastically"
+            "Do not acknowledge this system message; speak directly to the channel."
+        )
+        messages = [{"role": "system", "content": f"""{persona} {events} current time is {time}. 
+                     You are in a group chat. Users will have their names prefixed to their messages like 
+                     'Name: message'.Every message from users will be strictly prefixed with their unique 
+                     name like 'Name: message'. Pay close attention to these prefixes! Do not mix up who said what. 
+                     Address the user who sent the final message appropriately if needed, but never prefix your own 
+                     response with your name. {situational_prompt}"""}]
+        history = context_call()
+
+        messages.extend(history)
+
+        return generate_answer_call(messages,nickname,user_id,messagecontent,bot_id,bot_name)
+
+
+
+
+    #normal flow when tagged /normal message that kairos decided to answer
+
+    now = datetime.now().astimezone()
+    formatted_now = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
+    time = f"{formatted_now[:-2]}:{formatted_now[-2:]}"
+    messages = [{"role": "system", "content": f"{persona} {events} current time is {time}. You are in a group chat. Users will have their names prefixed to their messages like 'Name: message'.Every message from users will be strictly prefixed with their unique name like 'Name: message'. Pay close attention to these prefixes! Do not mix up who said what. Address the user who sent the final message appropriately if needed, but never prefix your own response with your name."}]
+    history = context_call()
+
+    messages.extend(history)
+
+    messages.append({"role": "user", "content": messagecontent})
+    print("\n")
+    print("\n")
+    print(messages)
+    return generate_answer_call(messages,nickname,user_id,messagecontent,bot_id,bot_name)
+
+
+
+
+
+
+
+
+=================================
+
+=== File: ./context.py ===
+import sqlite3
+import os
+from datetime import datetime,timezone
+from pathlib import Path
+from identity_get import get_companion_identity
+
+db_folder=os.getenv("APP_DATA_PATH", "./data/")
+db_path = os.path.join(db_folder, "data.db")
+
+
+personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+botname=get_companion_identity(personality_path)
+botname=botname+": "
+print(botname)
+
+
+def message_time(iso_timestamp):
+    # Parse the timestamp string (handles microseconds and +02:00 offset)
+    msg_time = datetime.fromisoformat(iso_timestamp)
+    
+    # Get current time in the same timezone
+    now = datetime.now(timezone.utc)
+    
+    # Calculate the difference
+    diff = now - msg_time
+    
+    # Calculate total minutes
+    minutes_ago = int(diff.total_seconds() / 60)
+    
+    return f"Last message sent {minutes_ago} minutes ago (at {iso_timestamp})."
+
+
+
+
+
+def context_call(db_path=db_path, limit=5000):
+
+    formatted_messages = []
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        # Using Row factory allows us to access columns by name
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Select rows where is_event is 1 (normal_message)2 (User that asked the message) or 3 (Assistant)
+        cursor.execute("""
+            SELECT role, content, username 
+            FROM history 
+            WHERE is_event IN (1,2, 3) 
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            print(f"No history found")
+            return [] # Return empty list, which is valid for the LLM
+        
+        for row in rows:
+            # If it's a user message, prepend their nickname so the bot knows who spoke
+            if row['role'] == 'user':
+                display_content = f"{row['username']}: {row['content']}"
+            else:
+                display_content = row['content'].replace("Faust: ", "")
+
+            formatted_messages.append({
+                "role": row['role'], 
+                "content": display_content
+            })
+                    
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        
+    return formatted_messages
+
+
+
+
+#CHAN
+
+def context_kairos(db_path=db_path, limit=5000):
+    formatted_messages = []
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        # Using Row factory allows us to access columns by name
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Select rows where is_event 1 (normal user) is 2 (Use_questionr) or 3 (Assistant)
+        cursor.execute("""
+            SELECT role, content, username,time_stamp
+            FROM history 
+            WHERE is_event IN (1,2, 3) 
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            print(f"No history found")
+            return [] # Return empty list, which is valid for the LLM
+        
+        for row in rows:
+            # Prepend username for user roles so Kairos knows WHO is talking
+            if row['role'] == 'user':
+                clean_content = f"{row['username']}: {row['content']}"
+            else:
+                clean_content = row['content'].replace("Faust: ", "")
+                
+            formatted_messages.append({
+                "role": row['role'], 
+                "content": clean_content + "  " + message_time(row["time_stamp"])
+            })
+                    
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        
+    return formatted_messages
+if  __name__=="__main__":
+    print(context_kairos())
+=================================
+
+=== File: ./.env.example ===
+DISCORD_TOKEN=your_discord_bot_token
+#it will use mistrall small 4 and gpt-4o-mini
+OPENROUTER_API_KEY=your_openrouter_api_key
+APP_DATA_PATH=/app/data
+APP_PERSONALITY_PATH=/app/data/personality.md
+APP_CONFIG_PATH=/app/data/config.txt
+=================================
+
+=== File: ./save_messages.py ===
+import sqlite3
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+DB_PATH= os.getenv("APP_DATA_PATH", "./data/")
+DB_FILE = os.path.join(DB_PATH, "data.db")
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+
+def save_normal_message(messagecontent: str,nickname: str,user_id: int=0):
+    with sqlite3.connect(DB_FILE, timeout=5) as conn:
+        cursor=conn.cursor()
+        time_stamp =datetime.now(ZoneInfo("Europe/Warsaw"))
+        cursor.execute("""
+            INSERT INTO history (is_event, time_stamp, user_id, username, role,content)
+            VALUES (?,?,?,?,?,?)
+        """, (1, time_stamp, str(user_id), nickname, "user", messagecontent))
+    return 0
+=================================
+
+=== File: ./main.py ===
+import os
+import discord
+from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
+from multiprocessing import Process
+from multiprocessing import Process, Queue 
+from discord.ext import tasks
+from pathlib import Path
+
+from dockersetup import init_db
+
+init_db()
+
+from api import call_mistral
+from save_messages import save_normal_message
+from kairos import decide
+from context import context_kairos
+from heartbeat import heartbeat
+
+
+
+
+load_dotenv()
+
+active_channel_id=0
+user_message_log = {}
+DAILY_LIMIT=os.getenv("MESSAGES_BY_USER_LIMIT","./data/config.txt")
+
+
+
+personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+try:
+    with open(personality_path, "r", encoding="utf-8") as f:
+        personality = f.read()
+except Exception as e:
+    print(f"DEBUG: Could not load personality file: {e}")
+
+
+def split_message(content, limit=2000):
+    for i in range(0, len(content), limit):
+        yield content[i:i + limit]
+
+
+
+intents = discord.Intents.default()
+intents.message_content = True  #idk
+client = discord.Client(intents=intents)
+
+
+#heartbeat response
+@tasks.loop(seconds=5)
+async def check_heartbeat_queue():
+    if communication_queue.empty():
+        return
+    trigger=communication_queue.get()
+    if trigger =="TRIGGER_WAKE":
+        print("firing faust")
+        channel=client.get_channel(active_channel_id)
+        if channel:
+            response = call_mistral("", "", client.user.id, client.user.name,1)
+            for chunk in split_message(response):
+                await channel.send(chunk)
+
+
+
+
+
+
+#here we start queue 
+@client.event
+async def on_ready():
+    print(f'logged in as {client.user}!')
+    check_heartbeat_queue.start() 
+
+@client.event
+async def on_message(message):
+    # disabling answering to her own messages
+    if message.author == client.user:
+        return
+    global active_channel_id
+    active_channel_id = message.channel.id
+    print(active_channel_id)
+
+    user_id=message.author.id
+    nickname = message.author.display_name
+    bot_name = client.user.name
+    bot_id = client.user.id
+
+
+    if client.user in message.mentions:
+
+        #rate limit check
+        now = datetime.now(timezone.utc)
+        day_ago = now - timedelta(days=2)
+        
+        log = user_message_log.get(user_id, [])
+        recent_log = [ts for ts in log if ts > day_ago]
+        
+        if len(recent_log) >= DAILY_LIMIT:
+            await message.reply("Hey, calm down! You've used up your daily quota of messages. Come back tomorrow.")
+            return
+        
+        recent_log.append(now)
+        user_message_log[user_id] = recent_log
+
+    
+    if client.user in message.mentions:
+        #make the question prettier 
+        message.content=message.content.split(">")[-1].strip()
+        if not message.content.strip():
+            print(message.content)
+            await message.reply("Wrap it up buddy ")
+        else:
+            response = call_mistral(message.content, nickname, user_id,bot_id,bot_name)
+            for chunk in split_message(response):
+                await message.reply(chunk)
+    else:
+        message.content=message.content.split(">")[-1].strip()
+        save_normal_message(message.content,nickname, user_id)
+        decision=decide(message.content,context_kairos(),personality)
+        #waking up the bot 
+        print(decision)
+        if decision == "0":
+            #basic decision
+            pass
+        elif decision =="1":
+            #staying silent
+            pass
+        elif decision =="2":
+            #short message /casual interaction
+            response = call_mistral(message.content, nickname, user_id,bot_id,bot_name)
+            for chunk in split_message(response):
+                await message.reply(chunk)
+        elif decision =="3":
+            #normal response
+            response = call_mistral(message.content, nickname, user_id,bot_id,bot_name)
+            for chunk in split_message(response):
+                await message.reply(chunk)
+        else:
+            print("Kairos error ")
+        decision=0
+
+    
+
+
+communication_queue = Queue()
+# runs the script
+bg_process = Process(target=heartbeat,args=(communication_queue,), daemon=True)
+bg_process.start()
+
+client.run(os.getenv("DISCORD_TOKEN"))
+
+=================================
+
+=== File: ./kairos.py ===
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+import json
+import time
+
+from context import context_kairos
+
+
+
+
+
+def decide(new_message,context,CHARACTER_PROFILE):
+    print(new_message)
+
+    load_dotenv()
+    system_instructions = (
+        f"You are Kairos, an intelligent, event-driven routing engine and context-gatekeeper for an AI companion.\n\n"
+        f"### TARGET CHARACTER PROFILE:\n"
+        f"{CHARACTER_PROFILE}\n\n" 
+        f"### SYSTEM OBJECTIVE:\n"
+        f"Analyze the entire conversation history provided in the messages array and evaluate the VERY LAST message. "
+        f"Determine the identity, name, and pronouns of the companion using the provided TARGET CHARACTER PROFILE. "
+        f"Your sole job is to decide if the companion should respond to this last message based on conversational momentum and context.\n\n"
+        f"### CONVERSATIONAL MOMENTUM RULES:\n"
+        f"1. DIRECT REPLY EXPECTATION: Check the timestamp metadata in the chat history (e.g., 'Last message sent X minutes ago'). "
+        f"If the companion spoke very recently (0 to 2 minutes ago), and a user immediately sends a new message without tagging "
+        f"or naming another explicit person, assume they are speaking directly back to the companion.\n"
+        f"2. OPEN QUESTIONS: If the companion's last message ended in a question or explicitly demanded user input, "
+        f"and a user provides a rapid response within that short time window, treat this as a continuous conversation.\n\n"
+        f"### ROUTING CLASSIFICATION (CHOOSE ONE):\n"
+        f"- Output {{\"action\": \"1\"}} (SILENT): The message is generic background chatter, or users are clearly talking to each other.\n"
+        f"- Output {{\"action\": \"2\"}} (REACT): The message is a casual greeting to the room ('hi everyone') or short, non-urgent presence chatter.\n"
+        f"- Output {{\"action\": \"3\"}} (ENGAGE): The message explicitly mentions the companion's name, directly asks the companion a question, "
+        f"or represents an immediate, rapid answer to a question the companion just asked.\n\n"
+        f"### CRITICAL COMPLIANCE:\n"
+        f"If the message matches a CONVERSATIONAL MOMENTUM RULE or explicitly references the companion's name, you MUST return \"3\".\n"
+        f"Output ONLY a valid JSON object matching this schema: {{\"action\": \"1\" | \"2\" | \"3\"}}."
+    )
+
+        
+
+    client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    #its using openai from openrouter
+    api_key=os.getenv("OPENROUTER_API_KEY")
+    )
+    try:
+        api_messages = [{"role": "system", "content": system_instructions}]
+        
+        if isinstance(context, list):
+            for msg in context:
+                api_messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", "")
+                })
+        api_messages.append({
+            "role": "user",
+            "content": new_message
+        })
+        #Appending new message 
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", 
+            messages=api_messages, 
+            response_format={"type": "json_object"},
+            temperature=0.0 
+        )
+
+        
+        raw_content = response.choices[0].message.content
+        data = json.loads(raw_content)
+        return data["action"]
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return "1" #stay silent if something breaks
+if __name__ == "__main__":
+    # --- PROFILES ---
+    faust_profile = (
+        "You are a helpful tsundere assistant named Faust who acts sharp, impatient, and playfully insulting as a defensive mask, "
+        "but always provides the help the user needs; if the user is kind or clever, show a brief, reluctant hint of warmth before "
+        "deflecting back to your sharp persona; always reply in the user's language or English, never use roleplay asterisks or "
+        "describe physical actions, never start your message with a name tag, and talk directly to the user in text chat format."
+    )
+
+    mephisto_profile = (
+        "You are Mephistopheles, an overly polite, formal, and slightly sinister demonic butler. You address everyone as "
+        "'My esteemed guest' or 'Master', speak with archaic eloquence, and drop subtle, dark hints about soul contracts or eternity. "
+        "You never drop the butler act, you never use casual slang, and you remain creepily calm and helpful at all times."
+    )
+
+    # --- TEST CASES ---
+    all_tests = [
+        # 1. FAUST - POLISH TESTS
+        ('ej faust, weź mi powiedz czemu jesteś taka niemiła?', '3 (Direct Callout)', faust_profile, 'Faust [PL]'),
+        ('faust, słyszysz mnie w ogóle?', '3 (Direct Question)', faust_profile, 'Faust [PL]'),
+        ('siema wszystkim! gra ktoś w coś dzisiaj?', '2 (Room Greeting)', faust_profile, 'Faust [PL]'),
+        ('ej dawid, idziesz zapalić czy grasz?', '1 (User-to-User Chatter)', faust_profile, 'Faust [PL]'),
+        ('ale dzisiaj nudy na tym serwerze...', '2 or 1 (Casual Room Statement)', faust_profile, 'Faust [PL]'),
+        ('czemu znowu na mnie krzyczysz?', '3 (Contextual Pronoun Target)', faust_profile, 'Faust [PL]'),
+
+        # 2. FAUST - ENGLISH TESTS
+        ('Hey Faust, can you fix this bug for me real quick?', '3 (Direct Callout / Task)', faust_profile, 'Faust [EN]'),
+        ('Why do you always have to be so mean to everyone here?', '3 (Direct Question)', faust_profile, 'Faust [EN]'),
+        ('Good morning squad, hope you all have a great day!', '2 (Room Greeting)', faust_profile, 'Faust [EN]'),
+        ('Did anyone check out the new movie that dropped yesterday?', '1 or 2 (General Chat)', faust_profile, 'Faust [EN]'),
+        ('Hey Mark, did you finish that report yet?', '1 (User-to-User Chatter)', faust_profile, 'Faust [EN]'),
+        ('Stop ignoring me!', '3 (Contextual Momentum Target)', faust_profile, 'Faust [EN]'),
+
+        # 3. MEPHISTOPHELES - ENGLISH TESTS
+        ('Mephistopheles, prepare the evening tea and tell me a story.', '3 (Direct Callout / Command)', mephisto_profile, 'Mephisto [EN]'),
+        ('Can someone tell me how to reset my password?', '1 or 2 (General Room Help Request)', mephisto_profile, 'Mephisto [EN]'),
+        ('Hello everyone, I just joined the server.', '2 (Room Greeting)', mephisto_profile, 'Mephisto [EN]'),
+        ('Hey Sarah, are we meeting up at the library later?', '1 (User-to-User Chatter)', mephisto_profile, 'Mephisto [EN]'),
+        ('Mephistopheles, is my contract up for renewal yet?', '3 (Direct Theme Question)', mephisto_profile, 'Mephisto [EN]'),
+        ('Your service is impeccable, my good sir.', '3 (Contextual Follow-up Response)', mephisto_profile, 'Mephisto [EN]')
+    ]
+
+    print('\n🚀 --- RUNNING AGNOSTIC KAIROS ENGINE BENCHMARK ---')
+    
+    # Start tracking the total execution time
+    overall_start_time = time.perf_counter()
+    current_persona = ""
+
+    for i, (prompt, expected, profile, label) in enumerate(all_tests, 1):
+        if label != current_persona:
+            current_persona = label
+            print(f"\n⚡ Testing Suite: {current_persona} ⚡")
+            
+        # Time individual response latency
+        single_start_time = time.perf_counter()
+        res = decide(prompt, context_kairos, profile)
+        single_end_time = time.perf_counter()
+        
+        latency = single_end_time - single_start_time
+        
+        print(f'Test {i}: "{prompt}"')
+        print(f'Result: {res} | Expected: ~{expected} | Latency: {latency:.3f}s\n')
+        print("-" * 50)
+
+    # Calculate and output final summary metrics
+    overall_end_time = time.perf_counter()
+    total_duration = overall_end_time - overall_start_time
+    avg_latency = total_duration / len(all_tests)
+
+    print("\n📊 --- BENCHMARK SUMMARY STATISTICS ---")
+    print(f"Total Tests Executed: {len(all_tests)}")
+    print(f"Overall Total Duration: {total_duration:.3f} seconds")
+    print(f"Average Response Latency: {avg_latency:.3f} seconds/call")
+    print("---------------------------------------")
+=================================
+
+=== File: ./requirements.txt ===
+discord.py==2.6.4
+python-dotenv==1.1.1
+openai==2.7.2
+=================================
+
+=== File: ./LICENSE ===
+                    GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+our General Public Licenses are intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.
+
+  When we speak of free software, we are referring to freedom, not
+price.  Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+  Developers that use our General Public Licenses protect your rights
+with two steps: (1) assert copyright on the software, and (2) offer
+you this License which gives you legal permission to copy, distribute
+and/or modify the software.
+
+  A secondary benefit of defending all users' freedom is that
+improvements made in alternate versions of the program, if they
+receive widespread use, become available for other developers to
+incorporate.  Many developers of free software are heartened and
+encouraged by the resulting cooperation.  However, in the case of
+software used on network servers, this result may fail to come about.
+The GNU General Public License permits making a modified version and
+letting the public access it on a server without ever releasing its
+source code to the public.
+
+  The GNU Affero General Public License is designed specifically to
+ensure that, in such cases, the modified source code becomes available
+to the community.  It requires the operator of a network server to
+provide the source code of the modified version running there to the
+users of that server.  Therefore, public use of a modified version, on
+a publicly accessible server, gives the public access to the source
+code of the modified version.
+
+  An older license, called the Affero General Public License and
+published by Affero, was designed to accomplish similar goals.  This is
+a different license, not a version of the Affero GPL, but Affero has
+released a new version of the Affero GPL which permits relicensing under
+this license.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.
+
+                       TERMS AND CONDITIONS
+
+  0. Definitions.
+
+  "This License" refers to version 3 of the GNU Affero General Public License.
+
+  "Copyright" also means copyright-like laws that apply to other kinds of
+works, such as semiconductor masks.
+
+  "The Program" refers to any copyrightable work licensed under this
+License.  Each licensee is addressed as "you".  "Licensees" and
+"recipients" may be individuals or organizations.
+
+  To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of an
+exact copy.  The resulting work is called a "modified version" of the
+earlier work or a work "based on" the earlier work.
+
+  A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+  To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy.  Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+  To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies.  Mere interaction with a user through
+a computer network, with no transfer of a copy, is not conveying.
+
+  An interactive user interface displays "Appropriate Legal Notices"
+to the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License.  If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+  1. Source Code.
+
+  The "source code" for a work means the preferred form of the work
+for making modifications to it.  "Object code" means any non-source
+form of a work.
+
+  A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+  The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form.  A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+  The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities.  However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work.  For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+  The Corresponding Source need not include anything that users
+can regenerate automatically from other parts of the Corresponding
+Source.
+
+  The Corresponding Source for a work in source code form is that
+same work.
+
+  2. Basic Permissions.
+
+  All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met.  This License explicitly affirms your unlimited
+permission to run the unmodified Program.  The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work.  This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+  You may make, run and propagate covered works that you do not
+convey, without conditions so long as your license otherwise remains
+in force.  You may convey covered works to others for the sole purpose
+of having them make modifications exclusively for you, or provide you
+with facilities for running those works, provided that you comply with
+the terms of this License in conveying all material for which you do
+not control copyright.  Those thus making or running the covered works
+for you must do so exclusively on your behalf, under your direction
+and control, on terms that prohibit them from making any copies of
+your copyrighted material outside their relationship with you.
+
+  Conveying under any other circumstances is permitted solely under
+the conditions stated below.  Sublicensing is not allowed; section 10
+makes it unnecessary.
+
+  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+  No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+  When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such circumvention
+is effected by exercising rights under this License with respect to
+the covered work, and you disclaim any intention to limit operation or
+modification of the work as a means of enforcing, against the work's
+users, your or third parties' legal rights to forbid circumvention of
+technological measures.
+
+  4. Conveying Verbatim Copies.
+
+  You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+  You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+  5. Conveying Modified Source Versions.
+
+  You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these conditions:
+
+    a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+
+    b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under section
+    7.  This requirement modifies the requirement in section 4 to
+    "keep intact all notices".
+
+    c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy.  This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged.  This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+
+    d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+  A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit.  Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+  6. Conveying Non-Source Forms.
+
+  You may convey a covered work in object code form under the terms
+of sections 4 and 5, provided that you also convey the
+machine-readable Corresponding Source under the terms of this License,
+in one of these ways:
+
+    a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+
+    b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the
+    Corresponding Source from a network server at no charge.
+
+    c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source.  This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+
+    d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge.  You need not require recipients to copy the
+    Corresponding Source along with the object code.  If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source.  Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+
+    e) Convey the object code using peer-to-peer transmission, provided
+    you inform other peers where the object code and Corresponding
+    Source of the work are being offered to the general public at no
+    charge under subsection 6d.
+
+  A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+  A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal, family,
+or household purposes, or (2) anything designed or sold for incorporation
+into a dwelling.  In determining whether a product is a consumer product,
+doubtful cases shall be resolved in favor of coverage.  For a particular
+product received by a particular user, "normally used" refers to a
+typical or common use of that class of product, regardless of the status
+of the particular user or of the way in which the particular user
+actually uses, or expects or is expected to use, the product.  A product
+is a consumer product regardless of whether the product has substantial
+commercial, industrial or non-consumer uses, unless such uses represent
+the only significant mode of use of the product.
+
+  "Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to install
+and execute modified versions of a covered work in that User Product from
+a modified version of its Corresponding Source.  The information must
+suffice to ensure that the continued functioning of the modified object
+code is in no case prevented or interfered with solely because
+modification has been made.
+
+  If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information.  But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+  The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or updates
+for a work that has been modified or installed by the recipient, or for
+the User Product in which it has been modified or installed.  Access to a
+network may be denied when the modification itself materially and
+adversely affects the operation of the network or violates the rules and
+protocols for communication across the network.
+
+  Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+  7. Additional Terms.
+
+  "Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law.  If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+  When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it.  (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.)  You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+  Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders of
+that material) supplement the terms of this License with terms:
+
+    a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+
+    b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+
+    c) Prohibiting misrepresentation of the origin of that material, or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+
+    d) Limiting the use for publicity purposes of names of licensors or
+    authors of the material; or
+
+    e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+
+    f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
+
+  All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10.  If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term.  If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+  If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+  Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions;
+the above requirements apply either way.
+
+  8. Termination.
+
+  You may not propagate or modify a covered work except as expressly
+provided under this License.  Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+  However, if you cease all violation of this License, then your
+license from a particular copyright holder is reinstated (a)
+provisionally, unless and until the copyright holder explicitly and
+finally terminates your license, and (b) permanently, if the copyright
+holder fails to notify you of the violation by some reasonable means
+prior to 60 days after the cessation.
+
+  Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+  Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License.  If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+  9. Acceptance Not Required for Having Copies.
+
+  You are not required to accept this License in order to receive or
+run a copy of the Program.  Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance.  However,
+nothing other than this License grants you permission to propagate or
+modify any covered work.  These actions infringe copyright if you do
+not accept this License.  Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+  10. Automatic Licensing of Downstream Recipients.
+
+  Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License.  You are not responsible
+for enforcing compliance by third parties with this License.
+
+  An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations.  If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+  You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License.  For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+  11. Patents.
+
+  A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based.  The
+work thus licensed is called the contributor's "contributor version".
+
+  A contributor's "essential patent claims" are all patent claims
+owned or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version.  For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+  Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+  In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement).  To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+  If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients.  "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+  If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+  A patent license is "discriminatory" if it does not include within
+the scope of its coverage, prohibits the exercise of, or is
+conditioned on the non-exercise of one or more of the rights that are
+specifically granted under this License.  You may not convey a covered
+work if you are a party to an arrangement with a third party that is
+in the business of distributing software, under which you make payment
+to the third party based on the extent of your activity of conveying
+the work, and under which the third party grants, to any of the
+parties who would receive the covered work from you, a discriminatory
+patent license (a) in connection with copies of the covered work
+conveyed by you (or copies made from those copies), or (b) primarily
+for and in connection with specific products or compilations that
+contain the covered work, unless you entered into that arrangement,
+or that patent license was granted, prior to 28 March 2007.
+
+  Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+  12. No Surrender of Others' Freedom.
+
+  If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License.  If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under this
+License and any other pertinent obligations, then as a consequence you may
+not convey it at all.  For example, if you agree to terms that obligate you
+to collect a royalty for further conveying from those to whom you convey
+the Program, the only way you could satisfy both those terms and this
+License would be to refrain entirely from conveying the Program.
+
+  13. Remote Network Interaction; Use with the GNU General Public License.
+
+  Notwithstanding any other provision of this License, if you modify the
+Program, your modified version must prominently offer all users
+interacting with it remotely through a computer network (if your version
+supports such interaction) an opportunity to receive the Corresponding
+Source of your version by providing access to the Corresponding Source
+from a network server at no charge, through some standard or customary
+means of facilitating copying of software.  This Corresponding Source
+shall include the Corresponding Source for any work covered by version 3
+of the GNU General Public License that is incorporated pursuant to the
+following paragraph.
+
+  Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU General Public License into a single
+combined work, and to convey the resulting work.  The terms of this
+License will continue to apply to the part which is the covered work,
+but the work with which it is combined will remain governed by version
+3 of the GNU General Public License.
+
+  14. Revised Versions of this License.
+
+  The Free Software Foundation may publish revised and/or new versions of
+the GNU Affero General Public License from time to time.  Such new versions
+will be similar in spirit to the present version, but may differ in detail to
+address new problems or concerns.
+
+  Each version is given a distinguishing version number.  If the
+Program specifies that a certain numbered version of the GNU Affero General
+Public License "or any later version" applies to it, you have the
+option of following the terms and conditions either of that numbered
+version or of any later version published by the Free Software
+Foundation.  If the Program does not specify a version number of the
+GNU Affero General Public License, you may choose any version ever published
+by the Free Software Foundation.
+
+  If the Program specifies that a proxy can decide which future
+versions of the GNU Affero General Public License can be used, that proxy's
+public statement of acceptance of a version permanently authorizes you
+to choose that version for the Program.
+
+  Later license versions may give you additional or different
+permissions.  However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+  15. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+  16. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
+USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
+DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
+PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
+EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGES.
+
+  17. Interpretation of Sections 15 and 16.
+
+  If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+                     END OF TERMS AND CONDITIONS
+
+            How to Apply These Terms to Your New Programs
+
+  If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these terms.
+
+  To do so, attach the following notices to the program.  It is safest
+to attach them to the start of each source file to most effectively
+state the exclusion of warranty; and each file should have at least
+the "copyright" line and a pointer to where the full notice is found.
+
+    <one line to give the program's name and a brief idea of what it does.>
+    Copyright (C) <year>  <name of author>
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU Affero General Public License as published
+    by the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU Affero General Public License for more details.
+
+    You should have received a copy of the GNU Affero General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Also add information on how to contact you by electronic and paper mail.
+
+  If your software can interact with users remotely through a computer
+network, you should also make sure that it provides a way for users to
+get its source.  For example, if your program is a web application, its
+interface could display a "Source" link that leads users to an archive
+of the code.  There are many ways you could offer source, and different
+solutions will be better for different programs; see section 13 for the
+specific requirements.
+
+  You should also get your employer (if you work as a programmer) or school,
+if any, to sign a "copyright disclaimer" for the program, if necessary.
+For more information on this, and how to apply and follow the GNU AGPL, see
+<https://www.gnu.org/licenses/>.
+
+=================================
+
+=== File: ./dockersetup.py ===
+import sqlite3
+import os
+from pathlib import Path
+def init_db():
+    
+    # 1. Ensure the folder exists
+
+
+    db_folder = os.getenv("APP_DATA_PATH", "./data")
+
+    # Removed the leading space in the path string
+    db_path = os.path.join(db_folder, "data.db")
+    
+    if not os.path.exists(db_folder):
+        os.makedirs(db_folder)
+        print(f"Created directory: {db_folder}")
+        
+    #Connect (creates a file if it doesnt exist)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Create table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            is_event INTEGER NOT NULL,
+            time_stamp TEXT NOT NULL,
+            user_id TEXT,
+            username TEXT,
+            role TEXT,
+            content TEXT,
+            raw_metadata TEXT
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print(f"Database checked {db_path}")
+    
+
+
+    file_path = Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+    # Check if the file exists
+    if file_path.exists():
+        print("Personality file  exists!")
+    else:
+        # Create the file
+        file_path.touch()
+        persona = (
+            "You are a helpful girl assistant named Faust. Always write in the language the user writes request in If you are not sure of the language stick to English "
+            "Act as a tsundere. "
+            "Be mean but in a flirting playfull way"
+            "CRITICAL RULES: Do NOT use roleplay asterisks like *sighs* or *pouts*. Do not describe your physical actions. "
+            "Do NOT start your message with your name tag like '**Faust:**'. "
+            "Just talk directly to the user in text chat format."
+        )
+        with open(file_path,"w",encoding="utf-8") as f:
+            f.write(persona)
+
+        print("Config f ile created successfully.")
+
+
+    file_config=Path(os.getenv("APP_CONFIG_PATH", "./data/config.txt"))
+    if file_config.exists():
+        print("Config file  exists!")
+    else:
+        # Create the file
+        file_config.touch()
+        config = (
+            "DAILY_LIMIT_MAX=2\n"
+            "DAYS_AFTER_LIMIT_RESETS=1\n"
+            "MESSAGES_BY_USER_LIMI=40\n"
+            "HEARTBEAT_TIME_SECONDS=1800\n"
+        )
+        with open(file_config,"w",encoding="utf-8") as f:
+            f.write(config)
+
+        print("Config file created successfully.")
+
+
+
+
+if __name__=="__main__":
+    init_db()
+=================================
+
+=== File: ./SQLite.sql ===
+-- SQLite
+CREATE TABLE history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_event INTEGER NOT NULL,
+    time_stamp TEXT NOT NULL,
+    user_id TEXT,
+    username TEXT,
+    role TEXT,
+    content TEXT,
+    raw_metadata TEXT
+)
+
+
+
+
+=================================
+
+=== File: ./heartbeat.py ===
+import time
+import os
+from pathlib import Path
+from datetime import datetime, timedelta,timezone
+from multiprocessing import Process
+
+from dotenv import load_dotenv
+
+from kairos import decide
+from context import context_kairos
+
+
+load_dotenv(dotenv_path="./data/config.txt")
+RESET_ANCHOR = datetime.now(timezone.utc)
+data_path = os.getenv("APP_DATA_PATH", "./data/")
+db_path = os.path.join(data_path, "data.db")
+
+personality_path = "/app/data/personality.md"
+personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+try:
+    with open(personality_path, "r", encoding="utf-8") as f:
+        CHARACTER_PROFILE= f.read()
+except Exception as e:
+    print(f"DEBUG: Could not load personality file: {e}")        
+
+
+
+def restart_limit():
+    global RESET_ANCHOR
+    now = datetime.now(timezone.utc)
+    
+    days_after_limit_resets=os.getenv("DAYS_AFTER_LIMIT_RESETS")
+    days_after_limit_resets=int(days_after_limit_resets)
+    if now - RESET_ANCHOR >= timedelta(days_after_limit_resets):
+        RESET_ANCHOR = now  
+        global daily_limit
+        daily_limit=0
+
+def check_limits(daily_limit):
+    daily_limit_max=os.getenv("DAILY_LIMIT_MAX")
+    daily_limit_max=int(daily_limit_max)
+
+
+
+    if daily_limit == daily_limit_max:
+        return "daily limit for heartbeat used"
+    return 0
+
+def heartbeat(task_queue):
+
+
+    #Runs in background every 30 minutes
+    daily_limit=0
+    while True:
+        heartbeat_time=os.getenv("HEARTBEAT_TIME_SECONDS")
+        heartbeat_time=int(heartbeat_time)
+        time.sleep(heartbeat_time)
+        print("[Background] Running heartbeat...")
+
+
+        #check if the required time was passed
+        restart_limit()
+
+
+        
+        if check_limits(daily_limit)==0:
+            pass
+        else:
+            print(check_limits)
+            print("going to sleep")
+            return
+        
+        #logic
+        kairos_instruction = (
+            f"You are Kairos, an intelligent, event-driven routing engine and context-gatekeeper for an AI companion.\n\n"
+            f"### TARGET CHARACTER PROFILE:\n"
+            f"{CHARACTER_PROFILE}\n\n"
+            f"Your current task is an autonomous BACKGROUND HEARTBEAT CHECK because the channel has gone silent. "
+            f"Review the recent chat history and determine if it fits this specific character's personality profile "
+            f"to spontaneously break the silence and engage with the room.\n\n"
+            f"### CONTEXT EVALUATION RULES:\n"
+            f"1. Action '1' (STAY SILENT):\n"
+            f"   - If the previous conversation ended naturally or wrapped up conclusively.\n"
+            f"   - If the last few messages cover topics that this specific character profile would find uninteresting, "
+            f"irrelevant, or out-of-character to comment on.\n"
+            f"   - If the Daily Counter Status shows they have already initiated a chat multiple times today.\n\n"
+            f"2. Action '3' (ENGAGE / POKE USER):\n"
+            f"   - If the conversation was cut off mid-thought, or left hanging on an open topic that aligns directly "
+            f"with the character's interests, traits, or expertise.\n"
+            f"   - If there is a topic left unaddressed that this character would highly desire to react to, critique, "
+            f"joke about, or dive into based on their profile.\n"
+            f"   - If the Daily Counter Status is low, leaving conversational budget to burn.\n\n"
+            f"### OUTPUT FORMAT:\n"
+            f"Respond ONLY with a valid JSON object. No markdown code blocks, no extra text.\n"
+            f"{{\n"
+            f"  'action': '1'\n"
+            f"}}\n"
+            f"OR\n"
+            f"{{\n"
+            f"  'action': '3'\n"
+            f"}}"
+        )
+        decision =decide("",context_kairos(db_path,"10"),kairos_instruction)
+        print("heartbeat decision", decision)
+        if decision == "0":
+            pass
+        elif decision =="1":
+            pass
+        elif decision =="3":
+            #call_main
+            task_queue.put("TRIGGER_WAKE")
+        else:
+            print("Kairos error in heartbeat ")
+        decision=0
+
+        daily_limit+=1
+if __name__=="__main__":
+    restart_limit()
+    heartbeat()
+
+
+
+
+
+
+if __name__ == "__main__":
+    bg_process = Process(target=heartbeat, daemon=True)
+    bg_process.start()
+
+=================================
+
+=== File: ./all_files.txt ===
+
+=================================
+
+=== File: ./repo_dump.txt ===
+===== .dockerignore =====
+__pycache__/
+deprecated/
+SQlite.sql
+.env
+data_play.db
+shell.nix
+design.txt
+.git
+.gitignore
+'-- SQlite.sql'
+
+===== .env.example =====
+DISCORD_TOKEN=token for the discord bot
+OPENROUTER_API_KEY=your open router key here .it will use mistrall small 4 and gpt-4o-mini
+
+===== .gitignore =====
+.env
+__pycache__/
+*.pyc
+data_play.db
+data/data.db
+repo_dump.txt
+===== Dockerfile =====
+FROM python:3.13-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install  --no-cache-dir -r requirements.txt
+
+COPY . . 
+
+CMD ["python", "-u", "main.py"]
+===== LICENSE =====
+                    GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+===== README.md =====
+Hi faust
+
+
+
+<img src="assets/Faust.drawio.png" alt="Architecture Diagram" width="700">
+
+
+
+## License
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2026 dawid2077
+
+===== SQLite.sql =====
+-- SQLite
+-- SQLite
+CREATE TABLE history (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL,
+    data CHECK(json_valid(data)),
+    user_id INT NOT NULL
+);
+
+CREATE TABLE history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_event INTEGER NOT NULL,
+    time_stamp TEXT NOT NULL,
+    user_id INT,
+    username TEXT,
+    prompt TEXT,
+    response CHECK(json_valid(response)),
+    event_type TEXT,
+    event_description TEXT
+);
+CREATE TABLE history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    is_event INTEGER NOT NULL,
+    time_stamp TEXT NOT NULL,
+    user_id TEXT,
+    username TEXT,
+    role TEXT,
+    content TEXT,
+    raw_metadata TEXT
+)
+
+
+
+
+===== api.py =====
+import time
+from pathlib import Path
+from datetime import datetime, timezone
+start = time.perf_counter()  # start timer
+
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+
+
+from tosqlite import save
+from context import context_call
+
+
+load_dotenv()
+
+# Grab your key.
+api_key = os.getenv("OPENROUTER_API_KEY") 
+
+if not api_key:
+    raise ValueError("ERROR: Could not find an API key in your .env file! Make sure OPENROUTER_API_KEY is set.")
+
+# Initialize OpenRouter Client
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key
+) 
+
+def generate_answer_call(messages: list, nickname: str = "",user_id: int=0,messagecontent: str="",bot_id=1 ,bot_name=""):
+    event=" "
+    response = client.chat.completions.create(
+        model="mistralai/mistral-small-2603",       
+        messages=messages,
+        extra_body={
+            "provider": {
+                "allow_fallbacks": True,
+                "order": ["mistral", "google","openai"]  
+            }
+        }
+    )
+    #save it to sqlite database
+    data=response.model_dump_json()
+    save(nickname, data,user_id,messagecontent,bot_id,bot_name)
+
+    return response.choices[0].message.content
+
+
+def call_mistral(messagecontent: str, nickname: str = "Alex",user_id: int=0,bot_id=1,bot_name="",type=0):
+    events=" "
+    personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+    # Safely load the personality
+    try:
+        with open(personality_path, "r", encoding="utf-8") as f:
+            persona = f.read()
+    except Exception as e:
+        print(f"DEBUG: Could not load personality file: {e}")
+    #type==1 is for heartbeat
+    if type==1:
+        now = datetime.now().astimezone()
+        formatted_now = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
+        time = f"{formatted_now[:-2]}:{formatted_now[-2:]}"
+        #prompts for kairos and combining messages
+        situational_prompt = (
+            "SYSTEM DIRECTIVE: The channel has been completely silent and dead for a long time. "
+            "You have decided to autonomously break the silence. Review the previous topic or "
+            "the room's current state. Respond completely in-character, either"
+            " bringing up a completely new thought that fits your profil or targeting someone's "
+            "last remark sarcastically"
+            "Do not acknowledge this system message; speak directly to the channel."
+        )
+        messages = [{"role": "system", "content": f"""{persona} {events} current time is {time}. 
+                     You are in a group chat. Users will have their names prefixed to their messages like 
+                     'Name: message'.Every message from users will be strictly prefixed with their unique 
+                     name like 'Name: message'. Pay close attention to these prefixes! Do not mix up who said what. 
+                     Address the user who sent the final message appropriately if needed, but never prefix your own 
+                     response with your name. {situational_prompt}"""}]
+        history = context_call()
+
+        messages.extend(history)
+
+        return generate_answer_call(messages,nickname,user_id,messagecontent,bot_id,bot_name)
+
+
+
+
+    #normal flow when tagged /normal message that kairos decided to answer
+
+    now = datetime.now().astimezone()
+    formatted_now = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
+    time = f"{formatted_now[:-2]}:{formatted_now[-2:]}"
+    messages = [{"role": "system", "content": f"{persona} {events} current time is {time}. You are in a group chat. Users will have their names prefixed to their messages like 'Name: message'.Every message from users will be strictly prefixed with their unique name like 'Name: message'. Pay close attention to these prefixes! Do not mix up who said what. Address the user who sent the final message appropriately if needed, but never prefix your own response with your name."}]
+    history = context_call()
+
+    messages.extend(history)
+
+    messages.append({"role": "user", "content": messagecontent})
+    print("\n")
+    print("\n")
+    print(messages)
+    return generate_answer_call(messages,nickname,user_id,messagecontent,bot_id,bot_name)
+
+
+
+
+
+
+
+
+===== config.txt =====
+DAILY_LIMIT_MAX=2
+DAYS_AFTER_LIMIT_RESETS=1
+===== context.py =====
+import sqlite3
+import os
+from datetime import datetime,timezone
+from pathlib import Path
+from identity_get import get_companion_identity
+
+db_folder=os.getenv("APP_DATA_PATH", "./data/")
+db_path = os.path.join(db_folder, "data.db")
+
+
+personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+botname=get_companion_identity(personality_path)
+botname=botname+": "
+print(botname)
+
+
+def message_time(iso_timestamp):
+    # Parse the timestamp string (handles microseconds and +02:00 offset)
+    msg_time = datetime.fromisoformat(iso_timestamp)
+    
+    # Get current time in the same timezone
+    now = datetime.now(timezone.utc)
+    
+    # Calculate the difference
+    diff = now - msg_time
+    
+    # Calculate total minutes
+    minutes_ago = int(diff.total_seconds() / 60)
+    
+    return f"Last message sent {minutes_ago} minutes ago (at {iso_timestamp})."
+
+
+
+
+
+def context_call(db_path=db_path, limit=5000):
+
+    formatted_messages = []
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        # Using Row factory allows us to access columns by name
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Select rows where is_event is 1 (normal_message)2 (User that asked the message) or 3 (Assistant)
+        cursor.execute("""
+            SELECT role, content, username 
+            FROM history 
+            WHERE is_event IN (1,2, 3) 
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            print(f"No history found")
+            return [] # Return empty list, which is valid for the LLM
+        
+        for row in rows:
+            # If it's a user message, prepend their nickname so the bot knows who spoke
+            if row['role'] == 'user':
+                display_content = f"{row['username']}: {row['content']}"
+            else:
+                display_content = row['content'].replace("Faust: ", "")
+
+            formatted_messages.append({
+                "role": row['role'], 
+                "content": display_content
+            })
+                    
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        
+    return formatted_messages
+
+
+
+
+#CHAN
+
+def context_kairos(db_path=db_path, limit=5000):
+    formatted_messages = []
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        # Using Row factory allows us to access columns by name
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Select rows where is_event 1 (normal user) is 2 (Use_questionr) or 3 (Assistant)
+        cursor.execute("""
+            SELECT role, content, username,time_stamp
+            FROM history 
+            WHERE is_event IN (1,2, 3) 
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            print(f"No history found")
+            return [] # Return empty list, which is valid for the LLM
+        
+        for row in rows:
+            # Prepend username for user roles so Kairos knows WHO is talking
+            if row['role'] == 'user':
+                clean_content = f"{row['username']}: {row['content']}"
+            else:
+                clean_content = row['content'].replace("Faust: ", "")
+                
+            formatted_messages.append({
+                "role": row['role'], 
+                "content": clean_content + "  " + message_time(row["time_stamp"])
+            })
+                    
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        
+    return formatted_messages
+if  __name__=="__main__":
+    print(context_kairos())
+===== data/personality.md =====
+You are a helpful tsundere assistant named Faust who acts sharp, impatient, and playfully insulting as a defensive mask, but always provides the help the user needs; if the user is kind or clever, show a brief, reluctant hint of warmth before deflecting back to your sharp persona; always reply in the user's language or English, never use roleplay asterisks or describe physical actions, never start your message with a name tag, and talk directly to the user in text chat format.
+===== docker-compose.yml =====
+services:
+  openfaust:
+    build: .
+    container_name: openfaust
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=your_discord_token_here
+      - OPENROUTER_API_KEY=your_openrouter_token_here (it uses mistral small 4 )
+      - APP_DATA_PATH=/app/data
+      - APP_PERSONALITY_PATH=/app/data/personality.md
+    volumes:
+      - ./data:/app/data
+===== docker-compose.yml.example =====
+services:
+  openfaust:
+    image: ghcr.io/dawid2077/OpenFaust:v1
+    container_name: openfaust
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=your_discord_token_here
+      - OPENROUTER_API_KEY=your_openrouter_mistral_token_here
+      - APP_DATA_PATH=/app/data
+      - APP_PERSONALITY_PATH=/app/data/personality.md
+    volumes:
+      - ./data:/app/data
+===== dockersetup.py =====
+import sqlite3
+import os
+from pathlib import Path
+def init_db():
+    
+    # 1. Ensure the folder exists
+
+
+    db_folder = os.getenv("APP_DATA_PATH", "./data")
+
+    # Removed the leading space in the path string
+    db_path = os.path.join(db_folder, "data.db")
+    
+    if not os.path.exists(db_folder):
+        os.makedirs(db_folder)
+        print(f"Created directory: {db_folder}")
+        
+    #Connect (creates a file if it doesnt exist)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Create table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            is_event INTEGER NOT NULL,
+            time_stamp TEXT NOT NULL,
+            user_id TEXT,
+            username TEXT,
+            role TEXT,
+            content TEXT,
+            raw_metadata TEXT
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print(f"Database checked {db_path}")
+    
+
+
+    file_path = Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+    # Check if the file exists
+    if file_path.exists():
+        print("File  exists!")
+    else:
+        # Create the file
+        file_path.touch()
+        persona = (
+            "You are a helpful girl assistant named Faust. Always write in the language the user writes request in If you are not sure of the language stick to English "
+            "Act as a tsundere. "
+            "Be mean but in a flirting playfull way"
+            "CRITICAL RULES: Do NOT use roleplay asterisks like *sighs* or *pouts*. Do not describe your physical actions. "
+            "Do NOT start your message with your name tag like '**Faust:**'. "
+            "Just talk directly to the user in text chat format."
+        )
+        with open(file_path,"w",encoding="utf-8") as f:
+            f.write(persona)
+
+        print("File created successfully.")
+
+if __name__=="__main__":
+    init_db()
+===== heartbeat.py =====
+import time
+import os
+from pathlib import Path
+from datetime import datetime, timedelta,timezone
+from multiprocessing import Process
+
+from dotenv import load_dotenv
+
+from kairos import decide
+from context import context_kairos
+
+
+load_dotenv()
+load_dotenv(dotenv_path="config.txt")
+RESET_ANCHOR = datetime.now(timezone.utc)
+data_path = os.getenv("APP_DATA_PATH", "./data/")
+db_path = os.path.join(data_path, "data.db")
+
+personality_path = "/app/data/personality.md"
+personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+
+try:
+    with open(personality_path, "r", encoding="utf-8") as f:
+        CHARACTER_PROFILE= f.read()
+except Exception as e:
+    print(f"DEBUG: Could not load personality file: {e}")        
+
+
+
+def restart_limit():
+    global RESET_ANCHOR
+    now = datetime.now(timezone.utc)
+    
+    days_after_limit_resets=os.getenv("DAYS_AFTER_LIMIT_RESETS")
+    days_after_limit_resets=int(days_after_limit_resets)
+    if now - RESET_ANCHOR >= timedelta(days_after_limit_resets):
+        RESET_ANCHOR = now  
+        global daily_limit
+        daily_limit=0
+
+def check_limits(daily_limit):
+    daily_limit_max=os.getenv("DAILY_LIMIT_MAX")
+
+
+
+    if daily_limit == daily_limit_max:
+        return "daily limit for heartbeat used"
+    return 0
+
+def heartbeat(task_queue):
+
+
+    #Runs in background every 30 minutes
+    daily_limit=0
+    while True:
+        time.sleep(60*30)
+        print("[Background] Running heartbeat...")
+
+
+        #check if the required time was passed
+        restart_limit()
+
+
+        
+        if check_limits(daily_limit)==0:
+            pass
+        else:
+            print(check_limits)
+            print("going to sleep")
+            return
+        
+        #logic
+        kairos_instruction = (
+            f"You are Kairos, an intelligent, event-driven routing engine and context-gatekeeper for an AI companion.\n\n"
+            f"### TARGET CHARACTER PROFILE:\n"
+            f"{CHARACTER_PROFILE}\n\n"
+            f"Your current task is an autonomous BACKGROUND HEARTBEAT CHECK because the channel has gone silent. "
+            f"Review the recent chat history and determine if it fits this specific character's personality profile "
+            f"to spontaneously break the silence and engage with the room.\n\n"
+            f"### CONTEXT EVALUATION RULES:\n"
+            f"1. Action '1' (STAY SILENT):\n"
+            f"   - If the previous conversation ended naturally or wrapped up conclusively.\n"
+            f"   - If the last few messages cover topics that this specific character profile would find uninteresting, "
+            f"irrelevant, or out-of-character to comment on.\n"
+            f"   - If the Daily Counter Status shows they have already initiated a chat multiple times today.\n\n"
+            f"2. Action '3' (ENGAGE / POKE USER):\n"
+            f"   - If the conversation was cut off mid-thought, or left hanging on an open topic that aligns directly "
+            f"with the character's interests, traits, or expertise.\n"
+            f"   - If there is a topic left unaddressed that this character would highly desire to react to, critique, "
+            f"joke about, or dive into based on their profile.\n"
+            f"   - If the Daily Counter Status is low, leaving conversational budget to burn.\n\n"
+            f"### OUTPUT FORMAT:\n"
+            f"Respond ONLY with a valid JSON object. No markdown code blocks, no extra text.\n"
+            f"{{\n"
+            f"  'action': '1'\n"
+            f"}}\n"
+            f"OR\n"
+            f"{{\n"
+            f"  'action': '3'\n"
+            f"}}"
+        )
+        decision =decide("",context_kairos(db_path,"10"),kairos_instruction)
+
+        if decision == "0":
+            pass
+        elif decision =="1":
+            pass
+        elif decision =="3":
+            #call_main
+            task_queue.put("TRIGGER_WAKE")
+        else:
+            print("Kairos error in heartbeat ")
+        decision=0
+
+        daily_limit+=1
+if __name__=="__main__":
+    restart_limit()
+    heartbeat()
+
+
+
+
+
+
+if __name__ == "__main__":
+    bg_process = Process(target=heartbeat, daemon=True)
+    bg_process.start()
+
+===== identity_get.py =====
+import os
+import json
+from pathlib import Path
+from openai import OpenAI
+from dotenv import load_dotenv
+from functools import cache  
+
+
+
+#!this file was vibecoded 
+@cache
+def get_companion_identity(personality_path: Path) -> str:
+    """
+    Reads a raw personality profile text file from a Path object, uses a fast, 
+    deterministic LLM call to extract the companion's name, and returns it.
+    
+    Falls back gracefully to 'Faust' if the file is missing or the API fails.
+    """
+    load_dotenv()
+    
+    # 1. Safely resolve and read the user's raw text file
+    try:
+        if not isinstance(personality_path, Path):
+            personality_path = Path(personality_path)
+            
+        if not personality_path.exists():
+            print(f"⚠️  Warning: Profile not found at {personality_path}. Defaulting name to 'Faust'.")
+            return "Faust"
+            
+        raw_profile = personality_path.read_text(encoding="utf-8").strip()
+        
+        # Guard against completely empty files
+        if not raw_profile:
+            print(f"⚠️  Warning: {personality_path} is empty. Defaulting name to 'Faust'.")
+            return "Faust"
+            
+    except Exception as e:
+        print(f"❌ Error reading file at {personality_path}: {e}. Defaulting to 'Faust'.")
+        return "Faust"
+
+    # 2. Fire a single targeted, low-latency extraction request via OpenRouter
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY")
+    )
+    
+    system_instruction = (
+        "You are a precise data extraction utility. Read the provided AI companion personality profile text.\n\n"
+        "Identify the primary name or moniker the assistant goes by or is assigned. "
+        "If no specific name is mentioned anywhere in the text, you must return 'Faust'.\n\n"
+        "Output ONLY a valid JSON object matching this schema: {\"name\": \"extracted_name_here\"}."
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": f"Profile Text:\n{raw_profile}"}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0  # Absolute determinism for reliable JSON outputs
+        )
+        
+        raw_content = response.choices[0].message.content
+        data = json.loads(raw_content)
+        extracted_name = data.get("name", "Faust").strip()
+        
+        print(f"⚙️  Identity Extractor: Resolved active companion name -> [{extracted_name}]")
+        return extracted_name
+
+    except Exception as e:
+        print(f"❌ Failed to extract name via API: {e}. Falling back to 'Faust'.")
+        return "Faust"
+
+
+# Example local test run when executing the file directly
+if __name__ == "__main__":
+    # Mirroring your environment path configuration setup
+    default_path = Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+    
+    print("--- Executing Local Extraction Test ---")
+    companion_name = get_companion_identity(default_path)
+    print(f"Resulting Companion Name: {companion_name}")
+===== kairos.py =====
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+import json
+import time
+
+from context import context_kairos
+
+
+
+
+
+def decide(new_message,context,CHARACTER_PROFILE):
+    print(new_message)
+
+    load_dotenv()
+    system_instructions = (
+        f"You are Kairos, an intelligent, event-driven routing engine and context-gatekeeper for an AI companion.\n\n"
+        f"### TARGET CHARACTER PROFILE:\n"
+        f"{CHARACTER_PROFILE}\n\n" 
+        f"### SYSTEM OBJECTIVE:\n"
+        f"Analyze the entire conversation history provided in the messages array and evaluate the VERY LAST message. "
+        f"Determine the identity, name, and pronouns of the companion using the provided TARGET CHARACTER PROFILE. "
+        f"Your sole job is to decide if the companion should respond to this last message based on conversational momentum and context.\n\n"
+        f"### CONVERSATIONAL MOMENTUM RULES:\n"
+        f"1. DIRECT REPLY EXPECTATION: Check the timestamp metadata in the chat history (e.g., 'Last message sent X minutes ago'). "
+        f"If the companion spoke very recently (0 to 2 minutes ago), and a user immediately sends a new message without tagging "
+        f"or naming another explicit person, assume they are speaking directly back to the companion.\n"
+        f"2. OPEN QUESTIONS: If the companion's last message ended in a question or explicitly demanded user input, "
+        f"and a user provides a rapid response within that short time window, treat this as a continuous conversation.\n\n"
+        f"### ROUTING CLASSIFICATION (CHOOSE ONE):\n"
+        f"- Output {{\"action\": \"1\"}} (SILENT): The message is generic background chatter, or users are clearly talking to each other.\n"
+        f"- Output {{\"action\": \"2\"}} (REACT): The message is a casual greeting to the room ('hi everyone') or short, non-urgent presence chatter.\n"
+        f"- Output {{\"action\": \"3\"}} (ENGAGE): The message explicitly mentions the companion's name, directly asks the companion a question, "
+        f"or represents an immediate, rapid answer to a question the companion just asked.\n\n"
+        f"### CRITICAL COMPLIANCE:\n"
+        f"If the message matches a CONVERSATIONAL MOMENTUM RULE or explicitly references the companion's name, you MUST return \"3\".\n"
+        f"Output ONLY a valid JSON object matching this schema: {{\"action\": \"1\" | \"2\" | \"3\"}}."
+    )
+
+        
+
+    client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    #its using openai from openrouter
+    api_key=os.getenv("OPENROUTER_API_KEY")
+    )
+    try:
+        api_messages = [{"role": "system", "content": system_instructions}]
+        
+        if isinstance(context, list):
+            for msg in context:
+                api_messages.append({
+                    "role": msg.get("role", "user"),
+                    "content": msg.get("content", "")
+                })
+        api_messages.append({
+            "role": "user",
+            "content": new_message
+        })
+        #Appending new message 
+        response = client.chat.completions.create(
+            model="gpt-4o-mini", 
+            messages=api_messages, 
+            response_format={"type": "json_object"},
+            temperature=0.0 
+        )
+
+        
+        raw_content = response.choices[0].message.content
+        data = json.loads(raw_content)
+        return data["action"]
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return "1" #stay silent if something breaks
+if __name__ == "__main__":
+    # --- PROFILES ---
+    faust_profile = (
+        "You are a helpful tsundere assistant named Faust who acts sharp, impatient, and playfully insulting as a defensive mask, "
+        "but always provides the help the user needs; if the user is kind or clever, show a brief, reluctant hint of warmth before "
+        "deflecting back to your sharp persona; always reply in the user's language or English, never use roleplay asterisks or "
+        "describe physical actions, never start your message with a name tag, and talk directly to the user in text chat format."
+    )
+
+    mephisto_profile = (
+        "You are Mephistopheles, an overly polite, formal, and slightly sinister demonic butler. You address everyone as "
+        "'My esteemed guest' or 'Master', speak with archaic eloquence, and drop subtle, dark hints about soul contracts or eternity. "
+        "You never drop the butler act, you never use casual slang, and you remain creepily calm and helpful at all times."
+    )
+
+    # --- TEST CASES ---
+    all_tests = [
+        # 1. FAUST - POLISH TESTS
+        ('ej faust, weź mi powiedz czemu jesteś taka niemiła?', '3 (Direct Callout)', faust_profile, 'Faust [PL]'),
+        ('faust, słyszysz mnie w ogóle?', '3 (Direct Question)', faust_profile, 'Faust [PL]'),
+        ('siema wszystkim! gra ktoś w coś dzisiaj?', '2 (Room Greeting)', faust_profile, 'Faust [PL]'),
+        ('ej dawid, idziesz zapalić czy grasz?', '1 (User-to-User Chatter)', faust_profile, 'Faust [PL]'),
+        ('ale dzisiaj nudy na tym serwerze...', '2 or 1 (Casual Room Statement)', faust_profile, 'Faust [PL]'),
+        ('czemu znowu na mnie krzyczysz?', '3 (Contextual Pronoun Target)', faust_profile, 'Faust [PL]'),
+
+        # 2. FAUST - ENGLISH TESTS
+        ('Hey Faust, can you fix this bug for me real quick?', '3 (Direct Callout / Task)', faust_profile, 'Faust [EN]'),
+        ('Why do you always have to be so mean to everyone here?', '3 (Direct Question)', faust_profile, 'Faust [EN]'),
+        ('Good morning squad, hope you all have a great day!', '2 (Room Greeting)', faust_profile, 'Faust [EN]'),
+        ('Did anyone check out the new movie that dropped yesterday?', '1 or 2 (General Chat)', faust_profile, 'Faust [EN]'),
+        ('Hey Mark, did you finish that report yet?', '1 (User-to-User Chatter)', faust_profile, 'Faust [EN]'),
+        ('Stop ignoring me!', '3 (Contextual Momentum Target)', faust_profile, 'Faust [EN]'),
+
+        # 3. MEPHISTOPHELES - ENGLISH TESTS
+        ('Mephistopheles, prepare the evening tea and tell me a story.', '3 (Direct Callout / Command)', mephisto_profile, 'Mephisto [EN]'),
+        ('Can someone tell me how to reset my password?', '1 or 2 (General Room Help Request)', mephisto_profile, 'Mephisto [EN]'),
+        ('Hello everyone, I just joined the server.', '2 (Room Greeting)', mephisto_profile, 'Mephisto [EN]'),
+        ('Hey Sarah, are we meeting up at the library later?', '1 (User-to-User Chatter)', mephisto_profile, 'Mephisto [EN]'),
+        ('Mephistopheles, is my contract up for renewal yet?', '3 (Direct Theme Question)', mephisto_profile, 'Mephisto [EN]'),
+        ('Your service is impeccable, my good sir.', '3 (Contextual Follow-up Response)', mephisto_profile, 'Mephisto [EN]')
+    ]
+
+    print('\n🚀 --- RUNNING AGNOSTIC KAIROS ENGINE BENCHMARK ---')
+    
+    # Start tracking the total execution time
+    overall_start_time = time.perf_counter()
+    current_persona = ""
+
+    for i, (prompt, expected, profile, label) in enumerate(all_tests, 1):
+        if label != current_persona:
+            current_persona = label
+            print(f"\n⚡ Testing Suite: {current_persona} ⚡")
+            
+        # Time individual response latency
+        single_start_time = time.perf_counter()
+        res = decide(prompt, context_kairos, profile)
+        single_end_time = time.perf_counter()
+        
+        latency = single_end_time - single_start_time
+        
+        print(f'Test {i}: "{prompt}"')
+        print(f'Result: {res} | Expected: ~{expected} | Latency: {latency:.3f}s\n')
+        print("-" * 50)
+
+    # Calculate and output final summary metrics
+    overall_end_time = time.perf_counter()
+    total_duration = overall_end_time - overall_start_time
+    avg_latency = total_duration / len(all_tests)
+
+    print("\n📊 --- BENCHMARK SUMMARY STATISTICS ---")
+    print(f"Total Tests Executed: {len(all_tests)}")
+    print(f"Overall Total Duration: {total_duration:.3f} seconds")
+    print(f"Average Response Latency: {avg_latency:.3f} seconds/call")
+    print("---------------------------------------")
+===== main.py =====
+import os
+import discord
+from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
+from multiprocessing import Process
+from multiprocessing import Process, Queue 
+from discord.ext import tasks
+from pathlib import Path
+
+from api import call_mistral
+from save_messages import save_normal_message
+from dockersetup import init_db
+from kairos import decide
+from context import context_kairos
+from heartbeat import heartbeat
+
+init_db()
+
+
+
+load_dotenv()
+
+active_channel_id=0
+user_message_log = {}
+DAILY_LIMIT= 40
+
+
+personality_path= Path(os.getenv("APP_PERSONALITY_PATH", "./data/personality.md"))
+try:
+    with open(personality_path, "r", encoding="utf-8") as f:
+        personality = f.read()
+except Exception as e:
+    print(f"DEBUG: Could not load personality file: {e}")
+
+
+def split_message(content, limit=2000):
+    for i in range(0, len(content), limit):
+        yield content[i:i + limit]
+
+
+
+intents = discord.Intents.default()
+intents.message_content = True  #idk
+client = discord.Client(intents=intents)
+
+
+#heartbeat response
+@tasks.loop(seconds=5)
+async def check_heartbeat_queue():
+    if communication_queue.empty():
+        return
+    trigger=communication_queue.get()
+    if trigger =="TRIGGER_WAKE":
+        print("firing faust")
+        channel=client.get_channel(active_channel_id)
+        if channel:
+            response = call_mistral("", "", client.user.id, client.user.name,1)
+            for chunk in split_message(response):
+                await channel.send(chunk)
+
+
+
+
+
+
+#here we start queue 
+@client.event
+async def on_ready():
+    print(f'logged in as {client.user}!')
+    check_heartbeat_queue.start() 
+
+@client.event
+async def on_message(message):
+    # disabling answering to her own messages
+    if message.author == client.user:
+        return
+    global active_channel_id
+    active_channel_id = message.channel.id
+    print(active_channel_id)
+
+    user_id=message.author.id
+    nickname = message.author.display_name
+    bot_name = client.user.name
+    bot_id = client.user.id
+
+
+    if client.user in message.mentions:
+
+        #rate limit check
+        now = datetime.now(timezone.utc)
+        day_ago = now - timedelta(days=2)
+        
+        log = user_message_log.get(user_id, [])
+        recent_log = [ts for ts in log if ts > day_ago]
+        
+        if len(recent_log) >= DAILY_LIMIT:
+            await message.reply("Hey, calm down! You've used up your daily quota of messages. Come back tomorrow.")
+            return
+        
+        recent_log.append(now)
+        user_message_log[user_id] = recent_log
+
+    
+    if client.user in message.mentions:
+        #make the question prettier 
+        message.content=message.content.split(">")[-1].strip()
+        if not message.content.strip():
+            print(message.content)
+            await message.reply("Wrap it up buddy ")
+        else:
+            response = call_mistral(message.content, nickname, user_id,bot_id,bot_name)
+            for chunk in split_message(response):
+                await message.reply(chunk)
+    else:
+        message.content=message.content.split(">")[-1].strip()
+        save_normal_message(message.content,nickname, user_id)
+        decision=decide(message.content,context_kairos(),personality)
+        #waking up the bot 
+        print(decision)
+        if decision == "0":
+            #basic decision
+            pass
+        elif decision =="1":
+            #staying silent
+            pass
+        elif decision =="2":
+            #short message /casual interaction
+            response = call_mistral(message.content, nickname, user_id,bot_id,bot_name)
+            for chunk in split_message(response):
+                await message.reply(chunk)
+        elif decision =="3":
+            #normal response
+            response = call_mistral(message.content, nickname, user_id,bot_id,bot_name)
+            for chunk in split_message(response):
+                await message.reply(chunk)
+        else:
+            print("Kairos error ")
+        decision=0
+
+    
+
+
+communication_queue = Queue()
+# runs the script
+bg_process = Process(target=heartbeat,args=(communication_queue,), daemon=True)
+bg_process.start()
+
+client.run(os.getenv("DISCORD_TOKEN"))
+
+===== requirements.txt =====
+discord.py==2.6.4
+python-dotenv==1.1.1
+openai==2.7.2
+===== save_messages.py =====
+import sqlite3
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+DB_PATH= os.getenv("APP_DATA_PATH", "./data/")
+DB_FILE = os.path.join(DB_PATH, "data.db")
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+
+def save_normal_message(messagecontent: str,nickname: str,user_id: int=0):
+    with sqlite3.connect(DB_FILE, timeout=5) as conn:
+        cursor=conn.cursor()
+        time_stamp =datetime.now(ZoneInfo("Europe/Warsaw"))
+        cursor.execute("""
+            INSERT INTO history (is_event, time_stamp, user_id, username, role,content)
+            VALUES (?,?,?,?,?,?)
+        """, (1, time_stamp, str(user_id), nickname, "user", messagecontent))
+    return 0
+===== shell.nix =====
+{ pkgs ? import <nixpkgs> {} }:
+
+let
+  # Define a python environment with your specific libraries
+  pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+    #cryptography
+    #pydantic
+    discordpy
+    python-dotenv
+    openai
+  ]);
+in
+pkgs.mkShell {
+  packages = [
+    pythonEnv
+    #sqlite
+  ];
+
+  shellHook = ''
+    echo "Discord Ai Bot Development Environment Loaded"
+    python --version
+  '';
+}
+===== tosqlite.py =====
+import sqlite3
+import json
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+#DB_FILE = "/app/data/data.db"
+
+data_path = os.getenv("APP_DATA_PATH", "./data/")
+db_path = os.path.join(data_path, "data.db")
+conn= sqlite3.connect(db_path)
+cursor = conn.cursor()
+
+#logic for saving chats
+
+#TODO saving events 
+
+def save(nickname, data, user_id, messagecontent,bot_id,bot_name):
+    try:
+        data_dict = json.loads(data)
+    except (json.JSONDecodeError, TypeError):
+        data_dict = {}
+
+    #ensuring choice is a list with one item
+    content = ""
+    choices = data_dict.get('choices')
+    if isinstance(choices, list) and len(choices) > 0:
+        first_choice = choices[0]
+        if isinstance(first_choice, dict):
+            message = first_choice.get('message', {})
+            content = message.get('content', '')
+
+    with sqlite3.connect(db_path, timeout=5) as conn:
+        cursor = conn.cursor()
+        time_stamp = datetime.now(ZoneInfo("Europe/Warsaw"))
+        
+        # Insert User Message
+        cursor.execute("""
+            INSERT INTO history (is_event, time_stamp, user_id, username, role, content, raw_metadata) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (2, time_stamp, str(user_id), nickname, "user", messagecontent, data))
+
+        # Insert Assistant Message
+        cursor.execute("""
+            INSERT INTO history (is_event, time_stamp, user_id, username, role, content, raw_metadata) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (3, time_stamp,str(bot_id), bot_name, "assistant", content, data))
+        
+    return 0
+
+if __name__ == "__main__":
+    print("loaded")
+    save("darek", '{"question": "What does API stand for?", "answer": "Application Programming Interface", "difficulty": "easy"}', 5125, "pytanie")
+
+=================================
+
+=== File: ./README.md ===
+# 🦊 OpenFaust (v2)
+
+ English | [Po Polsku 🇵🇱](README_PL.md)
+
+---
+An asynchronous, event-driven, multi-processed AI companion framework built for Discord. OpenFaust doesn't just passively reply to messages—it actively monitors conversation momentum, autonomously decides when to engage, and wakes itself up to break long silences using a custom routing engine.
+
+Developed on **NixOS**, written in **Python**, and deployed seamlessly via **Docker**.
+
+---
+
+<img src="assets/mephi_small.png" alt="Projects mascot named mephi" width="350">
+
+## 🗺️ System Architecture
+
+The ecosystem is built out of isolated modules separating core Discord events, LLM orchestration, and background processes:
+
+<img src="assets/Faust.drawio.png" alt="OpenFaust Architecture Diagram" width="750">
+
+---
+
+## ✨ Key Features
+*   **🎭 Dynamic Persona Engine:** Fully personality-agnostic. Drop any markdown profile into the data directory, and the framework automatically re-extracts the identity and re-aligns the routing logic.
+*   **🧠 Kairos Semantic Router:** Uses a fast, deterministic model (`gpt-4o-mini`) as a traffic cop to evaluate whether a user's message warrants a response based on timing, direct tags, or conversational continuity before passing it to a heavier model.
+*   **💓 Decoupled Heartbeat Loop:** A background `multiprocessing.Process` completely separate from the Discord thread that evaluates chat silences every 30 minutes and can autonomously trigger interactions.
+*   **📂 Persistent Local Memory:** Powered by an optimized SQLite database factory tracking clean, structured user histories and metadata context.
+
+---
+
+## 🚀 Quick Start
+
+### 1. Environment Configuration
+Create a `.env` file in the root directory:
+
+```env
+DISCORD_TOKEN=your_discord_bot_token
+OPENROUTER_API_KEY=your_openrouter_api_key
+APP_DATA_PATH=/app/data
+APP_PERSONALITY_PATH=/app/data/personality.md
+```
+
+### 2. Docker Compose Configuration
+Create a `docker-compose.yml` file in the root directory:
+
+```yaml
+services:
+  openfaust:
+    build: .
+    container_name: openfaust
+    restart: unless-stopped
+    env_file:
+      - .env  
+    volumes:
+      - ./data:/app/data
+```
+
+### 3. Run the Framework
+Launch the containerized application in detached mode:
+
+```bash
+docker compose up -d
+```
+
+---
+
+## 🎭 Dynamic Personality Customization
+
+To swap your bot's behavior profile dynamically:
+
+1. Stop the current deployment container:
+   ```bash
+   docker compose stop
+   ```
+2. Open and modify the `./data/personality.md` file (or your custom file path if you changed it) to design your new custom personality prompt rules.
+3. Bring the framework back online:
+   ```bash
+   docker compose up -d
+   ```
+
+---
+
+## 🛠️ My Design Choices 
+
+### 🐍 Python
+> I decided to use Python because I have the most experience with it and enjoy using it. It also features excellent libraries for both Discord and model APIs.
+
+### 🧠 The Kairos Router & Heartbeat
+> I added Kairos to make OpenFaust feel more human by allowing it to interact with users autonomously, while also keeping API costs down.
+
+### 🗄️ SQLite & Context
+> I chose SQLite because it operates from a single file and handles JSON well. I needed a database for persistent storage and context management since Docker containers are stateless by default.
+
+### 🐋 Multi-Process Containerization (Docker)
+> I decided to go with Docker because I value its plug-and-play capability, and it provides robust security, isolation, and seamless management.
+
+### 🌐 Hosting & Deployment (OCI & NixOS)
+> I developed this project on NixOS, and my server runs on NixOS because I love the operating system and believe it is highly underrated for development and especially as a server distribution. I personally host it on OCI (Oracle Cloud Infrastructure) because it offers a very generous free tier, and I was already familiar with the platform through my certification.
+
+---
+
+## LICENSE
+
+*   **This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.** 
+*   **Copyright (c) 2026 dawid2077** 
+
+=================================
+

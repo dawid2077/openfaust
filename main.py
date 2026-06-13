@@ -7,22 +7,25 @@ from multiprocessing import Process, Queue
 from discord.ext import tasks
 from pathlib import Path
 
+from dockersetup import init_db
+
+init_db()
+
 from api import call_mistral
 from save_messages import save_normal_message
-from dockersetup import init_db
 from kairos import decide
 from context import context_kairos
 from heartbeat import heartbeat
 
-init_db()
 
 
 
-load_dotenv()
+load_dotenv(dotenv_path="./data/config.txt")
 
 active_channel_id=0
 user_message_log = {}
-DAILY_LIMIT=os.getenv("MESSAGES_BY_USER_LIMIT","./data/config.txt")
+DAILY_LIMIT=os.getenv("MESSAGES_BY_USER_LIMIT")
+DAILY_LIMIT=int(DAILY_LIMIT)
 
 
 

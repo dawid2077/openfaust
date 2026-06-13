@@ -68,10 +68,10 @@ def init_db():
         # Create the file
         file_config.touch()
         config = (
-            "DAILY_LIMIT_MAX=2"
-            "DAYS_AFTER_LIMIT_RESETS=1"
-            "MESSAGES_BY_USER_LIMI=not implemented yet"
-            "HEARTBEAT_TIME=not implemented yet"
+            "DAILY_LIMIT_MAX=2\n"
+            "DAYS_AFTER_LIMIT_RESETS=1\n"
+            "MESSAGES_BY_USER_LIMIT=40\n"
+            "HEARTBEAT_TIME_SECONDS=1800\n"
         )
         with open(file_config,"w",encoding="utf-8") as f:
             f.write(config)
