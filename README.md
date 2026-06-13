@@ -14,6 +14,9 @@ Developed on **NixOS**, written in **Python**, and deployed seamlessly via **Doc
 
 ---
 
+<img src="assets/mephi_small.png" alt="Projects mascot named mephi" width="350">
+
+
 ## 🗺️ System Architecture
 
 The ecosystem is built out of isolated modules separating core Discord events, LLM orchestration, and background processes:
