@@ -1,47 +1,46 @@
 # 🦊 OpenFaust (v2)
 
- [In English 🇬🇧](README.md) | Po Polsku
+ English | [Po Polsku 🇵🇱](README_PL.md)
 
 ---
-Asynchroniczny, sterowany zdarzeniami (event-driven), wieloprocesowy framework asystenta AI stworzony dla platformy Discord. OpenFaust nie tylko biernie odpowiada na wiadomości — aktywnie monitoruje dynamikę konwersacji, autonomicznie decyduje, kiedy się zaangażować, i samoczynnie budzi się, aby przełamać długą ciszę za pomocą niestandardowego silnika routingu.
+An asynchronous, event-driven, multi-processed AI companion framework built for Discord. OpenFaust doesn't just passively reply to messages—it actively monitors conversation momentum, autonomously decides when to engage, and wakes itself up to break long silences using a custom routing engine.
 
-Rozwijany na **NixOS**, napisany w **Pythonie** i bezproblemowo wdrażany za pomocą **Dockera**.
+Developed on **NixOS**, written in **Python**, and deployed seamlessly via **Docker**.
 
 ---
 
 <img src="assets/mephi_small.png" alt="Projects mascot named mephi" width="350">
 
-## 🗺️ Architektura Systemu
+## 🗺️ System Architecture
 
-Ekosystem składa się z odizolowanych modułów oddzielających główne zdarzenia Discorda, orkiestrację LLM oraz procesy działające w tle:
+The ecosystem is built out of isolated modules separating core Discord events, LLM orchestration, and background processes:
 
 <img src="assets/Faust.drawio.png" alt="OpenFaust Architecture Diagram" width="750">
 
 ---
 
-## ✨ Główne Funkcje
-
-*   **🧠 Router Semantyczny Kairos:** Używa szybkiego, deterministycznego modelu (`gpt-4o-mini`) jako „kontrolera ruchu”, aby ocenić, czy wiadomość użytkownika wymaga odpowiedzi na podstawie czasu, bezpośrednich oznaczeń lub ciągłości konwersacji, zanim przekaże ją do cięższego modelu.
-*   **💓 Odizolowana Pętla Heartbeat:** Proces w tle (`multiprocessing.Process`), całkowicie oddzielony od wątku Discorda, który co 30 minut ocenia ciszę na czacie i może autonomicznie wywołać interakcję.
-*   **📂 Trwała Pamięć Lokalna:** Zasilana przez zoptymalizowaną bazę danych SQLite, która śledzi czystą, ustrukturyzowaną historię użytkowników oraz kontekst metadanych.
-*   **🎭 Dynamiczny Silnik Persony:** Całkowicie niezależny od osobowości. Wystarczy wrzucić dowolny profil w formacie Markdown do katalogu danych, a framework automatycznie wyodrębni tożsamość i dopasuje logikę routingu.
+## ✨ Key Features
+*   **🎭 Dynamic Persona Engine:** Fully personality-agnostic. Drop any markdown profile into the data directory, and the framework automatically re-extracts the identity and re-aligns the routing logic.
+*   **🧠 Kairos Semantic Router:** Uses a fast, deterministic model (`gpt-4o-mini`) as a traffic cop to evaluate whether a user's message warrants a response based on timing, direct tags, or conversational continuity before passing it to a heavier model.
+*   **💓 Decoupled Heartbeat Loop:** A background `multiprocessing.Process` completely separate from the Discord thread that evaluates chat silences every 30 minutes and can autonomously trigger interactions.
+*   **📂 Persistent Local Memory:** Powered by an optimized SQLite database factory tracking clean, structured user histories and metadata context.
 
 ---
 
-## 🚀 Szybki Start
+## 🚀 Quick Start
 
-### 1. Konfiguracja Środowiska
-Utwórz plik `.env` w katalogu głównym:
+### 1. Environment Configuration
+Create a `.env` file in the root directory:
 
 ```env
-DISCORD_TOKEN=twoj_token_bota_discord
-OPENROUTER_API_KEY=twoj_klucz_api_openrouter
+DISCORD_TOKEN=your_discord_bot_token
+OPENROUTER_API_KEY=your_openrouter_api_key
 APP_DATA_PATH=/app/data
 APP_PERSONALITY_PATH=/app/data/personality.md
 ```
 
-### 2. Konfiguracja Docker Compose
-Utwórz plik `docker-compose.yml` w katalogu głównym:
+### 2. Docker Compose Configuration
+Create a `docker-compose.yml` file in the root directory:
 
 ```yaml
 services:
@@ -55,8 +54,8 @@ services:
       - ./data:/app/data
 ```
 
-### 3. Uruchomienie Frameworku
-Uruchom skonteneryzowaną aplikację w trybie odizolowanym (detached mode):
+### 3. Run the Framework
+Launch the containerized application in detached mode:
 
 ```bash
 docker compose up -d
@@ -64,42 +63,42 @@ docker compose up -d
 
 ---
 
-## 🎭 Dynamiczna Personalizacja Osobowości
+## 🎭 Dynamic Personality Customization
 
-Aby dynamicznie zmienić profil zachowania bota:
+To swap your bot's behavior profile dynamically:
 
-1. Zatrzymaj bieżący kontener wdrożeniowy:
+1. Stop the current deployment container:
    ```bash
    docker compose stop
    ```
-2. Otwórz i zmodyfikuj plik `./data/personality.md` (lub ścieżkę do własnego pliku, jeśli została zmieniona), aby zaprojektować nowe reguły promptu osobowości.
-3. Uruchom framework ponownie:
+2. Open and modify the `./data/personality.md` file (or your custom file path if you changed it) to design your new custom personality prompt rules.
+3. Bring the framework back online:
    ```bash
    docker compose up -d
    ```
 
 ---
 
-## 🛠️ Moje Wybory Projektowe
+## 🛠️ My Design Choices 
 
 ### 🐍 Python
-> Zdecydowałem się na użycie Pythona, ponieważ mam w nim największe doświadczenie i lubię z niego korzystać. Posiada on również świetne biblioteki do obsługi Discorda oraz API modeli.
+> I decided to use Python because I have the most experience with it and enjoy using it. It also features excellent libraries for both Discord and model APIs.
 
-### 🧠 Router Kairos & Heartbeat
-> Dodałem Kairosa, aby OpenFaust brzmiał bardziej ludzko, pozwalając mu na autonomiczną interakcję z użytkownikami, jednocześnie obniżając koszty API.
+### 🧠 The Kairos Router & Heartbeat
+> I added Kairos to make OpenFaust feel more human by allowing it to interact with users autonomously, while also keeping API costs down.
 
-### 🗄️ SQLite & Kontekst
-> Wybrałem SQLite, ponieważ działa w oparciu o jeden plik i dobrze radzi sobie z formatem JSON. Potrzebowałem bazy danych do trwałego przechowywania danych i zarządzania kontekstem, ponieważ kontenery Dockera są domyślnie bezstanowe (stateless).
+### 🗄️ SQLite & Context
+> I chose SQLite because it operates from a single file and handles JSON well. I needed a database for persistent storage and context management since Docker containers are stateless by default.
 
-### 🐋 Wieloprocesowa Konteneryzacja (Docker)
-> Zdecydowałem się na Dockera, ponieważ cenię sobie jego prostotę działania (plug-and-play), a ponadto zapewnia on solidne bezpieczeństwo, izolację i bezproblemowe zarządzanie.
+### 🐋 Multi-Process Containerization (Docker)
+> I decided to go with Docker because I value its plug-and-play capability, and it provides robust security, isolation, and seamless management.
 
-### 🌐 Hosting & Wdrożenie (OCI & NixOS)
-> Projekt rozwijałem na NixOS i mój serwer również działa pod kontrolą NixOS, ponieważ uwielbiam ten system operacyjny i uważam, że jest wysoce niedoceniany zarówno do programowania, jak i jako dystrybucja serwerowa. Obydwie usługi hostuję na OCI (Oracle Cloud Infrastructure), ponieważ oferuje ono bardzo hojną darmową strefę (free tier), a samą platformę znałem już wcześniej dzięki mojemu certyfikatowi.
+### 🌐 Hosting & Deployment (OCI & NixOS)
+> I developed this project on NixOS, and my server runs on NixOS because I love the operating system and believe it is highly underrated for development and especially as a server distribution. I personally host it on OCI (Oracle Cloud Infrastructure) because it offers a very generous free tier, and I was already familiar with the platform through my certification.
 
 ---
 
-## LICENCJA
+## LICENSE
 
-*   **Ten projekt jest licencjonowany na warunkach licencji GNU Affero General Public License v3.0 - szczegóły znajdziesz w pliku [LICENSE](LICENSE).** 
-*   **Copyright (c) 2026 dawid2077**
+*   **This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.** 
+*   **Copyright (c) 2026 dawid2077** 
