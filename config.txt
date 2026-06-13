@@ -1,0 +1,4 @@
+DAILY_LIMIT_MAX=2
+DAYS_AFTER_LIMIT_RESETS=1
+MESSAGES_BY_USER_LIMI=not implemented yet
+HEARTBEAT_TIME=not implemented yet
