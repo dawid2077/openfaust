@@ -30,7 +30,7 @@ def restart_limit():
     global RESET_ANCHOR
     now = datetime.now(timezone.utc)
     
-    days_after_limit_resets=os.getenv("DAYS_AFTER_LIMIT_RESETS","./data/config.txt")
+    days_after_limit_resets=os.getenv("DAYS_AFTER_LIMIT_RESETS")
     days_after_limit_resets=int(days_after_limit_resets)
     if now - RESET_ANCHOR >= timedelta(days_after_limit_resets):
         RESET_ANCHOR = now  
