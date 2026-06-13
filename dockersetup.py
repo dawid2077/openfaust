@@ -58,7 +58,7 @@ def init_db():
         with open(file_path,"w",encoding="utf-8") as f:
             f.write(persona)
 
-        print("Config file created successfully.")
+        print("Config f ile created successfully.")
 
 
     file_config=Path(os.getenv("APP_CONFIG_PATH", "./data/config.txt"))
