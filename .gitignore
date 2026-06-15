@@ -6,4 +6,7 @@ data/data.db
 repo_dump.txt
 config.txt
 data_old.db
-all_files.txt
+all_files.txt.pytest_cache/
+tests/__pycache__/
+.venv/
+.pytest_cache

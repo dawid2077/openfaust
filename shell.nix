@@ -8,6 +8,7 @@ let
     discordpy
     python-dotenv
     openai
+    pytest
   ]);
 in
 pkgs.mkShell {
