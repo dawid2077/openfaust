@@ -43,7 +43,7 @@ def check_limits(daily_limit):
 
 
 
-    if daily_limit == daily_limit_max:
+    if daily_limit >= daily_limit_max:
         return "daily limit for heartbeat used"
     return 0
 
@@ -69,7 +69,7 @@ def heartbeat(task_queue):
         else:
             print(check_limits)
             print("going to sleep")
-            return
+            continue
         
         #logic
         kairos_instruction = (
@@ -122,8 +122,3 @@ if __name__=="__main__":
 
 
 
-
-
-if __name__ == "__main__":
-    bg_process = Process(target=heartbeat, daemon=True)
-    bg_process.start()
