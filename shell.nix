@@ -8,6 +8,9 @@ let
     discordpy
     python-dotenv
     openai
+    pytest 
+    pytest-timeout 
+    pytest-mock
   ]);
 in
 pkgs.mkShell {

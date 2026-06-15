@@ -1,0 +1,45 @@
+name: OpenFaust Test Suite
+
+on:
+  push:
+    branches: [ main, dev, 'feature/**', 'fix/**' ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  test:
+    name: "Python ${{ matrix.python-version }} — ${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-mock pytest-timeout
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run test suite
+        run: |
+          cd tests
+          python -m pytest -v --tb=long --timeout=30
+
+      - name: Run test suite with extended output
+        if: failure()
+        run: |
+          cd tests
+          python -m pytest -v --tb=long --timeout=30 -rpP 2>&1 | head -200

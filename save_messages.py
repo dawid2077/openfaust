@@ -5,8 +5,6 @@ from zoneinfo import ZoneInfo
 
 DB_PATH= os.getenv("APP_DATA_PATH", "./data/")
 DB_FILE = os.path.join(DB_PATH, "data.db")
-conn = sqlite3.connect(DB_FILE)
-cursor = conn.cursor()
 
 def save_normal_message(messagecontent: str,nickname: str,user_id: int=0):
     with sqlite3.connect(DB_FILE, timeout=5) as conn:

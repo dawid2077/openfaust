@@ -1,4 +1,4 @@
-# 🐶 OpenFaust (v2)
+# 🦊 OpenFaust (v2)
 
  English | [Po Polsku 🇵🇱](README_PL.md)
 
