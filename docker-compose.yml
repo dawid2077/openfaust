@@ -6,4 +6,16 @@ services:
     env_file:
       - .env
     volumes:
+
       - ./data:/app/data
+      
+  test_runner:
+    profiles: [test]
+    build:
+      dockerfile: Dockerfile.test
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - APP_DATA_PATH=/tmp/test-data
+    volumes:
+      - ./data/:/app/data/:ro
+      - ./:/app

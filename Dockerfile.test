@@ -1,0 +1,14 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install runtime + test deps
+COPY requirements.txt .
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+
+# Copy the project source
+COPY . .
+
+# Default: run integration tests
+CMD ["python", "-m", "pytest", "tests/test_integration_flow.py", "-v", "--tb=long"]
