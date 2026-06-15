@@ -8,8 +8,7 @@ from zoneinfo import ZoneInfo
 
 data_path = os.getenv("APP_DATA_PATH", "./data/")
 db_path = os.path.join(data_path, "data.db")
-conn= sqlite3.connect(db_path)
-cursor = conn.cursor()
+
 
 #logic for saving chats
 
