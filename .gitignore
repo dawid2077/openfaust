@@ -11,3 +11,4 @@ all_files.txt.pytest_cache/
 tests/__pycache__/
 .venv/
 .pytest_cache
+data/config.txt
