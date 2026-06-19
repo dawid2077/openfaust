@@ -120,7 +120,7 @@ async def on_message(message):
         save_normal_message(message.content,nickname, user_id)
         decision=decide(message.content,context_kairos(),personality)
         #waking up the bot 
-        print(decision)
+        print("Decide if to make openfaust respond" ,decision)
         if decision == "0":
             #basic decision
             pass

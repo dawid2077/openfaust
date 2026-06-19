@@ -63,11 +63,10 @@ def heartbeat(task_queue):
         restart_limit()
 
 
-        
+        print("daily limit counter: ",daily_limit)
         if check_limits(daily_limit)==0:
             pass
         else:
-            print(check_limits)
             print("going to sleep")
             continue
         
@@ -81,16 +80,16 @@ def heartbeat(task_queue):
             f"to spontaneously break the silence and engage with the room.\n\n"
             f"### CONTEXT EVALUATION RULES:\n"
             f"1. Action '1' (STAY SILENT):\n"
+            f"   - If the ongoing message exchange is fresh and you could add something to it"
             f"   - If the previous conversation ended naturally or wrapped up conclusively.\n"
             f"   - If the last few messages cover topics that this specific character profile would find uninteresting, "
+            f"   - If someone asked a question or wanted an answer but no one responed to that person"
             f"irrelevant, or out-of-character to comment on.\n"
-            f"   - If the Daily Counter Status shows they have already initiated a chat multiple times today.\n\n"
             f"2. Action '3' (ENGAGE / POKE USER):\n"
             f"   - If the conversation was cut off mid-thought, or left hanging on an open topic that aligns directly "
             f"with the character's interests, traits, or expertise.\n"
             f"   - If there is a topic left unaddressed that this character would highly desire to react to, critique, "
             f"joke about, or dive into based on their profile.\n"
-            f"   - If the Daily Counter Status is low, leaving conversational budget to burn.\n\n"
             f"### OUTPUT FORMAT:\n"
             f"Respond ONLY with a valid JSON object. No markdown code blocks, no extra text.\n"
             f"{{\n"
@@ -110,14 +109,12 @@ def heartbeat(task_queue):
         elif decision =="3":
             #call_main
             task_queue.put("TRIGGER_WAKE")
+            daily_limit+=1
         else:
             print("Kairos error in heartbeat ")
         decision=0
 
-        daily_limit+=1
-if __name__=="__main__":
-    restart_limit()
-    heartbeat()
+
 
 
 

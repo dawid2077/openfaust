@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 data_play.db
 data/data.db
+data.db
 repo_dump.txt
 config.txt
 data_old.db
@@ -10,3 +11,4 @@ all_files.txt.pytest_cache/
 tests/__pycache__/
 .venv/
 .pytest_cache
+data/config.txt
