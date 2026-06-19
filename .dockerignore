@@ -10,3 +10,4 @@ design.txt
 '-- SQlite.sql'
 config.txt
 .pytest_cache
+all_files.txt
