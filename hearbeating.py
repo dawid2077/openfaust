@@ -64,6 +64,7 @@ while True:
     chance=probability(last_message_minutes_time)
     if roll(chance):
         speak()
+        #some activation here and prompts etc for openfaust to use 
         last_message_minutes_time=0
     else:
         last_message_minutes_time+=20
