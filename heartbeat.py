@@ -10,7 +10,7 @@ from kairos import decide
 from context import context_kairos
 
 
-load_dotenv(dotenv_path="./data/config.txt")
+load_dotenv(dotenv_path="./data/config.conf")
 RESET_ANCHOR = datetime.now(timezone.utc)
 data_path = os.getenv("APP_DATA_PATH", "./data/")
 db_path = os.path.join(data_path, "data.db")
