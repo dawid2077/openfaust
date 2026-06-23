@@ -20,7 +20,7 @@ from heartbeat import heartbeat
 
 
 
-load_dotenv(dotenv_path="./data/config.txt")
+load_dotenv(dotenv_path="./data/config.conf")
 
 active_channel_id=0
 user_message_log = {}

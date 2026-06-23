@@ -62,21 +62,37 @@ def init_db():
 
 
     file_config=Path(os.getenv("APP_CONFIG_PATH", "./data/config.txt"))
-    if file_config.exists():
-        print("Config file  exists!")
-    else:
-        # Create the file
-        file_config.touch()
+    file_config_conf=Path(os.getenv("APP_CONFIG_PATH", "./data/config.conf"))
+
+    if file_config_conf.exists():
+        print("config.conf file  exists!")
+    elif file_config.exists():
+        print("config.txt file  exists!")
+        file_config_conf.touch()
         config = (
             "DAILY_LIMIT_MAX=2\n"
             "DAYS_AFTER_LIMIT_RESETS=1\n"
             "MESSAGES_BY_USER_LIMIT=40\n"
             "HEARTBEAT_TIME_SECONDS=1800\n"
         )
-        with open(file_config,"w",encoding="utf-8") as f:
+        with open(file_config_conf,"w",encoding="utf-8") as f:
+            f.write(config)
+        file_config.unlink()
+
+        print("config.conf file created and config.txt deleted successfully.")
+    else:
+        # Create the file
+        file_config_conf.touch()
+        config = (
+            "DAILY_LIMIT_MAX=2\n"
+            "DAYS_AFTER_LIMIT_RESETS=1\n"
+            "MESSAGES_BY_USER_LIMIT=40\n"
+            "HEARTBEAT_TIME_SECONDS=1800\n"
+        )
+        with open(file_config_conf,"w",encoding="utf-8") as f:
             f.write(config)
 
-        print("Config file created successfully.")
+        print("Config.conf file created successfully.")
 
 
 
