@@ -70,7 +70,7 @@ def init_db():
         print("config.txt file  exists!")
         file_config_conf.touch()
         config = (
-            "DAILY_LIMIT_MAX=2\n"
+            "DAILY_LIMIT_MAX=20\n"
             "DAYS_AFTER_LIMIT_RESETS=1\n"
             "MESSAGES_BY_USER_LIMIT=40\n"
             "HEARTBEAT_TIME_SECONDS=1800\n"

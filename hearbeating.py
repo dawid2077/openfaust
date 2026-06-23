@@ -1,5 +1,6 @@
 import time
 import os
+import random
 from pathlib import Path
 from datetime import datetime, timedelta,timezone
 from multiprocessing import Process
@@ -10,7 +11,7 @@ from kairos import decide
 from context import context_kairos
 
 
-load_dotenv(dotenv_path="./data/config.txt")
+load_dotenv(dotenv_path="./data/config.conf")
 RESET_ANCHOR = datetime.now(timezone.utc)
 data_path = os.getenv("APP_DATA_PATH", "./data/")
 db_path = os.path.join(data_path, "data.db")
@@ -46,6 +47,32 @@ def check_limits(daily_limit):
     if daily_limit >= daily_limit_max:
         return "daily limit for heartbeat used"
     return 0
+
+
+#in future engament from 0-100 pulled from config.conf in which it is from 0-1 and multiplied by 100 and rounded
+def probability(last_message_minutes_time: int,engagement: int=0) -> float:
+        return (last_message_minutes_time*0.0001)
+def roll(probability: float) -> bool:
+    if random.random() <= probability:
+        return True
+    else:
+        return False
+#calculate pulls from the sqlite latest message time
+last_message_minutes_time=720
+while True:
+    time.sleep(20*60)
+    chance=probability(last_message_minutes_time)
+    if roll(chance):
+        speak()
+        last_message_minutes_time=0
+    else:
+        last_message_minutes_time+=20
+    
+
+
+    
+    
+    
 
 def heartbeating(task_queue):
 

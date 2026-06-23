@@ -1,6 +1,6 @@
 services:
   openfaust:
-    image: ghcr.io/dawid2077/openfaust:v2-unstable
+    image: ghcr.io/dawid2077/openfaust:v2.0.0
     container_name: openfaust
     restart: unless-stopped
     env_file:
