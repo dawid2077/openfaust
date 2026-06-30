@@ -45,11 +45,11 @@ Create a `docker-compose.yml` file in the root directory:
 ```yaml
 services:
   openfaust:
-    build: .
+    image: ghcr.io/dawid2077/openfaust:v2.0.0
     container_name: openfaust
     restart: unless-stopped
     env_file:
-      - .env  
+      - .env
     volumes:
       - ./data:/app/data
 ```
